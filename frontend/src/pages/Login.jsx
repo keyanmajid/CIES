@@ -35,7 +35,7 @@ const Login = () => {
         {/* Left Side - Gradient Background */}<div
         className="md:w-1/2 bg-cover bg-center p-8 flex flex-col justify-center items-center text-white relative"
         style={{
-    backgroundImage: "url('/src/Images/3dd9db7384d6d8879c288d7f456357bc.jpg')",
+          backgroundImage: "url('/Images/3dd9db7384d6d8879c288d7f456357bc.jpg')",
   }}>
           {/* Optional decorative elements */}
           <div className="absolute top-0 left-0 w-32 h-32 bg-white bg-opacity-10 rounded-full -translate-x-16 -translate-y-16"></div>

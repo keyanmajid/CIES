@@ -35,7 +35,7 @@ const Signup = () => {
         {/* Left Side - Gradient Background */}<div
         className="md:w-1/2 bg-cover bg-center p-8 flex flex-col justify-center items-center text-white relative"
         style={{
-    backgroundImage: "url('/src/Images/78d3c234cc3a3766f1cb3fba5e64f4f8.jpg')",
+  backgroundImage: "url('/Images/78d3c234cc3a3766f1cb3fba5e64f4f8.jpg')"  ,
   }}>
           {/* Optional decorative elements */}
           <div className="absolute top-0 left-0 w-32 h-32 bg-white bg-opacity-10 rounded-full -translate-x-16 -translate-y-16"></div>
