@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 const CartContext = createContext();
 
 // Use your local backend URL
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "https://cies-5dc4.onrender.com";
 
 export const CartProvider = ({ children }) => {
   const [cartItems, setCartItems] = useState([]);
