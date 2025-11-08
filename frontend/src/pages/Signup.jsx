@@ -1,42 +1,55 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Signup = () => {
-  const handleSubmit = async (e) => {
-  e.preventDefault();
+  const navigate = useNavigate();
 
-  const data = {
-    name: `${e.target.firstName.value} ${e.target.lastName.value}`,
-    email: e.target.email.value,
-    password: e.target.password.value,
-    role: "customer",
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const data = {
+      name: `${e.target.firstName.value} ${e.target.lastName.value}`,
+      email: e.target.email.value,
+      password: e.target.password.value,
+      role: "customer",
+    };
+
+    try {
+      const res = await fetch("https://cies-5dc4.onrender.com/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      const result = await res.json();
+      if (res.ok) {
+        // ✅ Save the token returned from signup
+        if (result.token) {
+          localStorage.setItem("token", result.token);
+        }
+        
+        alert("Signup Successful ✅");
+        navigate("/"); // Redirect to home page
+      } else {
+        alert(result.message || "Signup failed ❌");
+      }
+    } catch (error) {
+      console.error('Signup error:', error);
+      alert("Network error. Please try again.");
+    }
   };
 
-
-  const res = await fetch("https://cies-5dc4.onrender.com/api/auth/signup", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-
-  const result = await res.json();
-  if (res.ok) {
-    alert("Signup Successful ✅");
-    window.location.href = "/Login";
-  } else {
-    alert(result.message || "Signup failed ❌");
-  }
-};
-
   return (
-<div className="min-h-screen flex items-center justify-center bg-gradient-to-tr from-green-950 to-black py-12 px-4 sm:px-6 lg:px-8">
-
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-tr from-green-950 to-black py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
         
-        {/* Left Side - Gradient Background */}<div
-        className="md:w-1/2 bg-cover bg-center p-8 flex flex-col justify-center items-center text-white relative"
-        style={{
-  backgroundImage: "url('/Images/78d3c234cc3a3766f1cb3fba5e64f4f8.jpg')"  ,
-  }}>
+        {/* Left Side - Gradient Background */}
+        <div
+          className="md:w-1/2 bg-cover bg-center p-8 flex flex-col justify-center items-center text-white relative"
+          style={{
+            backgroundImage: "url('/Images/78d3c234cc3a3766f1cb3fba5e64f4f8.jpg')",
+          }}
+        >
           {/* Optional decorative elements */}
           <div className="absolute top-0 left-0 w-32 h-32 bg-white bg-opacity-10 rounded-full -translate-x-16 -translate-y-16"></div>
           <div className="absolute bottom-0 right-0 w-40 h-40 bg-white bg-opacity-10 rounded-full translate-x-20 translate-y-20"></div>
@@ -46,7 +59,6 @@ const Signup = () => {
             <p className="text-lg opacity-90 mb-6">
               Share your artwork with thousands of artists and get discovered by clients worldwide.
             </p>
-           
           </div>
         </div>
 
@@ -68,6 +80,8 @@ const Signup = () => {
                 <input
                   type="text"
                   id="firstName"
+                  name="firstName"
+                  required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   placeholder="John"
                 />
@@ -79,6 +93,8 @@ const Signup = () => {
                 <input
                   type="text"
                   id="lastName"
+                  name="lastName"
+                  required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   placeholder="Doe"
                 />
@@ -93,6 +109,8 @@ const Signup = () => {
               <input
                 type="email"
                 id="email"
+                name="email"
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 placeholder="john@example.com"
               />
@@ -106,6 +124,9 @@ const Signup = () => {
               <input
                 type="password"
                 id="password"
+                name="password"
+                required
+                minLength="6"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 placeholder="••••••••"
               />
@@ -116,6 +137,8 @@ const Signup = () => {
               <input
                 type="checkbox"
                 id="terms"
+                name="terms"
+                required
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label htmlFor="terms" className="ml-2 block text-sm text-gray-700">
@@ -130,10 +153,11 @@ const Signup = () => {
             >
               Join us
             </button>
-            {/* 👇 Added this part */}
+
+            {/* Login link */}
             <p className="text-center text-sm text-gray-600 mt-4">
               Already have an account?{" "}
-              <a href="/Login" className="text-blue-600 hover:underline">
+              <a href="/login" className="text-blue-600 hover:underline">
                 Log in
               </a>
             </p>

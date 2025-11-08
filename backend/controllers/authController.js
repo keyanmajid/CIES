@@ -13,7 +13,17 @@ export const signup = async (req, res) => {
     const user = new User({ name, email, password: hashed, role });
     await user.save();
 
-    res.json({ message: "Signup successful" });
+    // ✅ RETURN TOKEN WITH NAME INCLUDED
+    const token = jwt.sign({ 
+      id: user._id, 
+      name: user.name,  // ADD THIS LINE
+      role: user.role 
+    }, process.env.JWT_SECRET);
+    
+    res.json({ 
+      message: "Signup successful",
+      token  // ADD THIS LINE - return the token
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -28,7 +38,13 @@ export const login = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET);
+    // ✅ INCLUDE NAME IN JWT TOKEN
+    const token = jwt.sign({ 
+      id: user._id, 
+      name: user.name,  // ADD THIS LINE
+      role: user.role 
+    }, process.env.JWT_SECRET);
+    
     res.json({ token, user });
   } catch (error) {
     res.status(500).json({ error: error.message });

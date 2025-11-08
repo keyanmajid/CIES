@@ -1,9 +1,9 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom'; // Add this import
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
-  const navigate = useNavigate(); // Add this hook
-  
+  const navigate = useNavigate();
+
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -21,9 +21,13 @@ const Login = () => {
 
       const result = await res.json();
       if (res.ok) {
-        localStorage.setItem("token", result.token);
+        // ✅ Save token from login response
+        if (result.token) {
+          localStorage.setItem("token", result.token);
+        }
+        
         alert("Login Successful ✅");
-        navigate("/"); // ✅ This will now work
+        navigate("/"); // Redirect to home page
       } else {
         alert(result.message || "Login failed ❌");
       }
@@ -72,8 +76,8 @@ const Login = () => {
               <input
                 type="email"
                 id="email"
-                name="email" // Added name attribute for form handling
-                required // Added required validation
+                name="email"
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 placeholder="john@example.com"
               />
@@ -87,8 +91,8 @@ const Login = () => {
               <input
                 type="password"
                 id="password"
-                name="password" // Added name attribute for form handling
-                required // Added required validation
+                name="password"
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 placeholder="••••••••"
               />

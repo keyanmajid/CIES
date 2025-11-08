@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ShoppingCart, ChevronLeft, ChevronRight } from "lucide-react";
+import { ShoppingCart, ChevronLeft, ChevronRight, User } from "lucide-react";
 import { useCart } from "../context/CartContext"; // Adjust the path if needed
 
 export default function Home() {
   const { addToCart, cartCount, isAuthenticated } = useCart(); // ✅ Use cart context
+  const [userName, setUserName] = useState("Guest");
 
   // CAROUSEL SLIDES
   const slides = [
@@ -43,6 +44,31 @@ export default function Home() {
   const length = slides.length;
   const productsPerView = 4;
   const productContainerRef = useRef(null);
+
+  // Get user name from token or localStorage
+  useEffect(() => {
+    const getUserName = () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (token) {
+          // Decode JWT token to get user info
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.name) {
+            setUserName(payload.name.split(' ')[0]); // Show first name only
+          } else if (payload.email) {
+            setUserName(payload.email.split('@')[0]); // Show username from email
+          }
+        } else {
+          setUserName("Guest");
+        }
+      } catch (error) {
+        console.error("Error getting user name:", error);
+        setUserName("Guest");
+      }
+    };
+
+    getUserName();
+  }, [isAuthenticated]);
 
   const nextSlide = () => setCurrent((current + 1) % length);
   const prevSlide = () => setCurrent((current - 1 + length) % length);
@@ -90,14 +116,15 @@ export default function Home() {
     return typeof price === "number" ? `$${price.toFixed(2)}` : `$${parseFloat(price).toFixed(2)}`;
   };
 
- const handleAddToCart = async (product) => {
-  const result = await addToCart(product);
-  if (result && result.success) {
-    alert(`${product.name} added to cart!`);
-  } else {
-    alert(result?.error || "Failed to add item to cart. Please try again.");
-  }
-};
+  const handleAddToCart = async (product) => {
+    const result = await addToCart(product);
+    if (result && result.success) {
+      alert(`${product.name} added to cart!`);
+    } else {
+      alert(result?.error || "Failed to add item to cart. Please try again.");
+    }
+  };
+
   return (
     <div className="min-h-screen w-full bg-cies-900 text-white">
       {/* NAVBAR */}
@@ -109,12 +136,32 @@ export default function Home() {
           <Link to="/signup" className="hover:text-cies-300 transition-colors">Sign Up</Link>
           <Link to="/cart" className="hover:text-cies-300 transition-colors">Cart</Link>
         </div>
+        
         <div className="flex items-center justify-center w-1/3">
           <div className="flex items-center w-full max-w-md border border-cies-700 rounded-full bg-cies-850/60 backdrop-blur-sm px-3 py-2 focus-within:bg-cies-800/70 transition-all duration-200">
             <input type="search" placeholder="Search..." className="w-full bg-transparent text-white placeholder-gray-300 outline-none px-2" />
           </div>
         </div>
-        <div className="flex items-center justify-center">
+        
+        <div className="flex items-center space-x-4">
+         {/* User Info */}
+{isAuthenticated ? (
+  <div className="flex items-center space-x-2 bg-cies-800 px-4 py-2 rounded-full">
+    <User className="w-4 h-4 text-cies-300" />
+    <span className="text-sm font-medium">Hello, {userName}</span>
+  </div>
+) : (
+  <Link
+    to="/login"
+    className="flex items-center space-x-2 bg-cies-800 px-4 py-2 rounded-full hover:bg-cies-700 transition-colors"
+  >
+    <User className="w-4 h-4 text-cies-300" />
+    <span className="text-sm font-medium">Login</span>
+  </Link>
+)}
+
+          
+          {/* Cart Icon */}
           <Link to="/cart" className="relative bg-cies-800 hover:bg-cies-700 w-10 h-10 flex items-center justify-center rounded-full shadow-md cursor-pointer transition-colors">
             <ShoppingCart className="text-white w-5 h-5" />
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
