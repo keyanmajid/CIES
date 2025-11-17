@@ -7,7 +7,11 @@ import Signup from "./pages/Signup";
 import CustomerCare from "./pages/CustomerCare";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import CartTest from "./pages/CartTest";
-
+import TestInteractions from "./pages/TestInteractions";
+import EmployeeSignup from "./pages/EmployeeSignup";
+import ManagerEmployees from "./pages/ManagerEmployees";
+import ChatCustomer from "./pages/ChatCustomer";
+import ChatEmployee from "./pages/ChatEmployee";
 export default function App() {
   return (
     <CartProvider> {/* Wrap everything with CartProvider */}
@@ -19,7 +23,12 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/care" element={<CustomerCare />} />
           <Route path="/cart" element={<CartTest />} />
-          <Route path="/manager" element={<ManagerDashboard />} />
+          <Route path="/manager-dashboard" element={<ManagerDashboard />} />
+          <Route path="/EmployeeSignup" element={<EmployeeSignup />} />
+          <Route path="/manager/employees" element={<ManagerEmployees />} />
+          <Route path="/chat/customer" element={<ChatCustomer />} />
+          <Route path="/chat/employee" element={<ChatEmployee />} />
+
         </Routes>
       </Router>
     </CartProvider>

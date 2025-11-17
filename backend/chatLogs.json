@@ -1,0 +1,44 @@
+[
+  {
+    "timestamp": "2025-11-14T11:16:26.805Z",
+    "sender": "customer",
+    "receiverId": "emp-1763118967686",
+    "text": "hey",
+    "role": "customer"
+  },
+  {
+    "timestamp": "2025-11-14T11:16:31.870Z",
+    "sender": "employee",
+    "receiverId": "cust-1763072043066",
+    "text": "hi",
+    "role": "employee"
+  },
+  {
+    "timestamp": "2025-11-14T11:17:59.436Z",
+    "sender": "employee",
+    "receiverId": "cust-1763072043066",
+    "text": "how can i help you",
+    "role": "employee"
+  },
+  {
+    "timestamp": "2025-11-14T11:18:06.695Z",
+    "sender": "customer",
+    "receiverId": "emp-1763118967686",
+    "text": "i cant buy stuff",
+    "role": "customer"
+  },
+  {
+    "timestamp": "2025-11-16T10:25:50.091Z",
+    "sender": "customer",
+    "receiverId": "emp-1763118967686",
+    "text": "alsjdlkjdsalkjlkdsaj",
+    "role": "customer"
+  },
+  {
+    "timestamp": "2025-11-16T10:25:55.742Z",
+    "sender": "employee",
+    "receiverId": "cust-1763072043066",
+    "text": "ashkjsahdjhadkjhsakjd",
+    "role": "employee"
+  }
+]
