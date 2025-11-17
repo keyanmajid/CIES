@@ -13,13 +13,13 @@ export default function Home() {
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchLoading, setIsSearchLoading] = useState(false);
 
-    // Helper function for backend images
+    // ✅ FIXED: Helper function for backend images
     const backendImagePath = (filename) => {
         if (!filename || typeof filename !== 'string') {
             return '/placeholder.jpg';
         }
         const cleanFilename = filename.startsWith('/') ? filename.substring(1) : filename;
-        return `${import.meta.env.VITE_API_URL}/public/${cleanFilename}`;
+        return `https://cies-5dc4.onrender.com/public/${cleanFilename}`;
     };
 
     // CAROUSEL SLIDES
@@ -37,11 +37,11 @@ export default function Home() {
     const productsPerView = 4;
     const productContainerRef = useRef(null);
 
-    // Fetch products from backend
+    // ✅ FIXED: Fetch products from backend
     useEffect(() => {
         const fetchProducts = async () => {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/products`);
+                const res = await fetch(`https://cies-5dc4.onrender.com/api/products`);
                 const data = await res.json();
                 setProducts(data);
                 setBentoItems(data);
@@ -70,7 +70,7 @@ export default function Home() {
         getUserName();
     }, [isAuthenticated]);
 
-    // Search function
+    // ✅ FIXED: Search function
     const handleSearch = async () => {
         const trimmedQuery = searchQuery.trim();
         
@@ -94,7 +94,7 @@ export default function Home() {
             }
 
             const res = await fetch(
-                `${import.meta.env.VITE_API_URL}/api/products/search?query=${encodeURIComponent(trimmedQuery)}`,
+                `https://cies-5dc4.onrender.com/api/products/search?query=${encodeURIComponent(trimmedQuery)}`,
                 { headers }
             );
             
