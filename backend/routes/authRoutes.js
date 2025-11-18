@@ -4,13 +4,11 @@ import { verifyUser, verifyRole } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-// Customer signup
+// Public routes
 router.post("/signup", signup);
-
-// Login
 router.post("/login", login);
 
-// NEW: Manager adds employee
+// Protected routes - only for managers
 router.post("/manager/employees", verifyUser, verifyRole(["manager"]), managerAddEmployee);
 
 export default router;
