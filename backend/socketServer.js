@@ -13,31 +13,66 @@ export const router = express.Router();
 
 export const setupSocketServer = (server) => {
   const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
-    transports: ["polling", "websocket"],
+    cors: { 
+      origin: [
+        "https://customerinteractioneval.netlify.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://cies-5dc4.onrender.com"
+      ], 
+      methods: ["GET", "POST"],
+      credentials: true
+    },
+    transports: ["websocket", "polling"],
   });
 
   io.on("connection", (socket) => {
     console.log("🟢 New connection:", socket.id);
+    console.log("📊 Current stats - Employees:", activeEmployees.size, "Customers:", activeCustomers.size);
 
     // ---------- REGISTER ----------
     socket.on("registerCustomer", (customerId) => {
       activeCustomers.set(customerId, socket.id);
       console.log(`📝 Customer registered: ${customerId} -> ${socket.id}`);
+      console.log(`📊 Total customers: ${activeCustomers.size}`);
     });
 
     socket.on("registerEmployee", (employeeId) => {
-      activeEmployees.set(employeeId, { 
-        socketId: socket.id, 
-        status: "free", 
-        currentCustomer: null 
+      // ✅ FIX: Check if employee already exists and update instead of duplicate
+      const existingEmployee = activeEmployees.get(employeeId);
+      if (existingEmployee) {
+        // Update existing employee with new socket ID
+        activeEmployees.set(employeeId, {
+          ...existingEmployee,
+          socketId: socket.id,
+          status: "free",
+          currentCustomer: null
+        });
+        console.log(`🔄 Employee reconnected: ${employeeId} -> ${socket.id}`);
+      } else {
+        // Create new employee entry
+        activeEmployees.set(employeeId, { 
+          socketId: socket.id, 
+          status: "free", 
+          currentCustomer: null 
+        });
+        console.log(`👨‍💼 New employee registered: ${employeeId} -> ${socket.id}`);
+      }
+      
+      console.log(`📊 Total employees: ${activeEmployees.size}, Free: ${[...activeEmployees.values()].filter(emp => emp.status === "free").length}`);
+      
+      // ✅ FIX: Send confirmation to employee
+      socket.emit("employeeRegistered", { 
+        success: true, 
+        employeeId,
+        freeEmployees: [...activeEmployees.values()].filter(emp => emp.status === "free").length
       });
-      console.log(`👨‍💼 Employee registered: ${employeeId} -> ${socket.id}`);
     });
 
     // ---------- START INTERACTION ----------
     socket.on("startInteraction", async ({ customerId, type }) => {
       console.log(`🎯 Customer ${customerId} starting ${type} interaction`);
+      console.log(`📊 Available employees: ${[...activeEmployees.entries()].map(([id, data]) => `${id}(${data.status})`).join(', ')}`);
       
       // Check if customer already has a pending interaction
       const existingInteractionId = activeInteractions.get(customerId);
@@ -56,15 +91,19 @@ export const setupSocketServer = (server) => {
         }
       }
 
-      const freeEmployee = [...activeEmployees.entries()].find(([, data]) => data.status === "free");
+      // ✅ FIX: Find free employees more reliably
+      const freeEmployees = [...activeEmployees.entries()].filter(([, data]) => data.status === "free");
+      
+      console.log(`🔍 Found ${freeEmployees.length} free employees:`, freeEmployees.map(([id]) => id));
 
-      if (!freeEmployee) {
+      if (freeEmployees.length === 0) {
         console.log(`❌ No free employees for customer ${customerId}`);
         io.to(socket.id).emit("noEmployee", "No free employee available");
         return;
       }
 
-      const [employeeId, empData] = freeEmployee;
+      // Get the first free employee
+      const [employeeId, empData] = freeEmployees[0];
       console.log(`🎯 Assigning customer ${customerId} to employee ${employeeId}`);
 
       // Update existing interaction or create new one
@@ -94,12 +133,26 @@ export const setupSocketServer = (server) => {
         console.log(`💾 New interaction saved for customer ${customerId}`);
       }
 
+      // ✅ FIX: Check if employee socket is still connected before sending
+      const employeeSocketId = empData.socketId;
+      const employeeSocket = io.sockets.sockets.get(employeeSocketId);
+      
+      if (!employeeSocket || !employeeSocket.connected) {
+        console.log(`❌ Employee ${employeeId} socket not connected, removing from active list`);
+        activeEmployees.delete(employeeId);
+        // Retry with next available employee
+        socket.emit("noEmployee", "Employee not available, please try again");
+        return;
+      }
+
       // Send request to the first available employee
-      io.to(empData.socketId).emit("incomingRequest", { 
+      io.to(employeeSocketId).emit("incomingRequest", { 
         customerId, 
         type,
-        redirected: !!existingInteractionId // Indicate if this is a redirected request
+        redirected: !!existingInteractionId
       });
+
+      console.log(`📨 Sent request to employee ${employeeId} at socket ${employeeSocketId}`);
 
       // Update employee status to "waiting"
       activeEmployees.set(employeeId, { 
@@ -111,6 +164,7 @@ export const setupSocketServer = (server) => {
       activeInteractions.set(customerId, interaction._id);
       
       console.log(`📊 Updated employee ${employeeId} status: waiting`);
+      console.log(`📊 Current employee status:`, [...activeEmployees.entries()].map(([id, data]) => `${id}(${data.status})`));
     });
 
     // ---------- ACCEPT INTERACTION ----------
@@ -133,6 +187,8 @@ export const setupSocketServer = (server) => {
       if (customerSocket) {
         io.to(customerSocket).emit("interactionAccepted", { employeeId });
         console.log(`🔔 Notified customer ${customerId} of acceptance`);
+      } else {
+        console.log(`❌ Customer ${customerId} not found for acceptance notification`);
       }
     });
 
@@ -148,13 +204,13 @@ export const setupSocketServer = (server) => {
         console.log(`📊 Reset employee ${employeeId} status: free`);
       }
 
-      // ✅ FIX: Update the interaction document to remove the assigned employee
+      // Update the interaction document to remove the assigned employee
       const interactionId = activeInteractions.get(customerId);
       if (interactionId) {
         try {
           await Interaction.findByIdAndUpdate(interactionId, { 
-            employeeId: null, // Remove the assigned employee
-            status: "pending" // Reset status to pending
+            employeeId: null,
+            status: "pending"
           });
           console.log(`📝 Reset interaction ${interactionId} - removed employee assignment`);
         } catch (error) {
@@ -170,7 +226,6 @@ export const setupSocketServer = (server) => {
       console.log(`🔍 Looking for next available employee. Found: ${availableEmployees.length} options`);
 
       if (availableEmployees.length > 0) {
-        // Get the first available employee
         const [nextEmployeeId, nextEmpData] = availableEmployees[0];
         
         console.log(`🔄 Redirecting customer ${customerId} to employee ${nextEmployeeId}`);
@@ -182,7 +237,7 @@ export const setupSocketServer = (server) => {
           currentCustomer: customerId
         });
 
-        // ✅ FIX: Update the interaction with the new employee ID
+        // Update the interaction with the new employee ID
         if (interactionId) {
           await Interaction.findByIdAndUpdate(interactionId, {
             employeeId: nextEmployeeId
@@ -193,7 +248,7 @@ export const setupSocketServer = (server) => {
         io.to(nextEmpData.socketId).emit("incomingRequest", { 
           customerId, 
           type: "chat",
-          redirected: true // Add flag to indicate this is a redirected request
+          redirected: true
         });
 
         console.log(`📨 Sent redirected request to employee ${nextEmployeeId}`);
@@ -365,12 +420,13 @@ export const setupSocketServer = (server) => {
     });
 
     // ---------- DISCONNECT ----------
-    socket.on("disconnect", () => {
-      console.log(`🔴 Socket disconnected: ${socket.id}`);
+    socket.on("disconnect", (reason) => {
+      console.log(`🔴 Socket disconnected: ${socket.id}, reason: ${reason}`);
       
       // Clean up employees
       for (const [id, data] of activeEmployees.entries()) {
         if (data.socketId === socket.id) {
+          console.log(`🧹 Removing employee ${id} due to disconnect`);
           // If employee was busy with a customer, free that customer
           if (data.currentCustomer) {
             const customerSocket = activeCustomers.get(data.currentCustomer);
@@ -384,13 +440,14 @@ export const setupSocketServer = (server) => {
           }
           
           activeEmployees.delete(id);
-          console.log(`🧹 Removed employee ${id} from active list`);
+          console.log(`✅ Removed employee ${id} from active list`);
         }
       }
       
       // Clean up customers
       for (const [id, sId] of activeCustomers.entries()) {
         if (sId === socket.id) {
+          console.log(`🧹 Removing customer ${id} due to disconnect`);
           // If customer was in an active chat, free the employee
           const interactionId = activeInteractions.get(id);
           if (interactionId) {
@@ -412,9 +469,11 @@ export const setupSocketServer = (server) => {
           }
           
           activeCustomers.delete(id);
-          console.log(`🧹 Removed customer ${id} from active list`);
+          console.log(`✅ Removed customer ${id} from active list`);
         }
       }
+      
+      console.log(`📊 Final stats - Employees: ${activeEmployees.size}, Customers: ${activeCustomers.size}`);
     });
 
     // ---------- DEBUG ENDPOINT ----------
@@ -422,7 +481,13 @@ export const setupSocketServer = (server) => {
       const status = {
         activeCustomers: Array.from(activeCustomers.entries()),
         activeEmployees: Array.from(activeEmployees.entries()),
-        activeInteractions: Array.from(activeInteractions.entries())
+        activeInteractions: Array.from(activeInteractions.entries()),
+        summary: {
+          totalEmployees: activeEmployees.size,
+          freeEmployees: [...activeEmployees.values()].filter(emp => emp.status === "free").length,
+          totalCustomers: activeCustomers.size,
+          totalInteractions: activeInteractions.size
+        }
       };
       socket.emit("statusUpdate", status);
     });

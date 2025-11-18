@@ -19,7 +19,17 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware to configure CORS and JSON parsing 
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://customerinteractioneval.netlify.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://cies-5dc4.onrender.com"
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+}));
 app.use(express.json());
 
 // Log every request

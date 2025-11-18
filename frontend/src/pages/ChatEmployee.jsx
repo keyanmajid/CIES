@@ -8,27 +8,33 @@ export default function ChatEmployee() {
   const [incoming, setIncoming] = useState(null);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("Initializing...");
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const socketRef = useRef(null);
 
   useEffect(() => {
     console.log("🚀 Initializing employee chat with ID:", employeeId);
     
     const socket = io("https://cies-5dc4.onrender.com", {
-      transports: ["websocket", "polling"], // Changed order for better connection
+      transports: ["websocket", "polling"],
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      timeout: 20000
+      timeout: 10000,
+      forceNew: true
     });
     
     socketRef.current = socket;
 
     socket.on("connect", () => {
       console.log("🟢 Employee socket connected:", socket.id);
-      console.log("📝 Registering employee with ID:", employeeId);
+      setConnectionStatus("connected");
+      setStatus("✅ Connected to server, registering...");
       
+      // Register employee
       socket.emit("registerEmployee", employeeId);
       setStatus("✅ Registered and waiting for customers...");
+      
+      console.log("📊 Employee registration complete");
     });
 
     socket.on("incomingRequest", (data) => {
@@ -46,7 +52,7 @@ export default function ChatEmployee() {
       setChat(prev => [...prev, { sender: "Customer", text }]);
     });
 
-    // ✅ NEW: Handle interaction completed
+    // Handle interaction completed
     socket.on("interactionCompleted", ({ customerId, completedBy }) => {
       console.log(`🏁 Interaction completed by ${completedBy || 'system'}`);
       setStatus("Chat completed. Waiting for new requests...");
@@ -55,22 +61,23 @@ export default function ChatEmployee() {
       setIncoming(null);
     });
 
-    // ✅ NEW: Handle customer disconnect
-    socket.on("customerDisconnected", ({ customerId }) => {
-      console.log(`🔴 Customer ${customerId} disconnected`);
-      setStatus("Customer disconnected. Waiting for new requests...");
-      setCustomerId(null);
-      setChat(prev => [...prev, { sender: "System", text: "Customer disconnected from chat" }]);
-    });
-
     socket.on("connect_error", (err) => {
       console.error("❌ Socket connect_error:", err);
+      setConnectionStatus("error");
       setStatus("Connection error: " + err.message);
     });
     
     socket.on("disconnect", (reason) => {
       console.log("🔴 Socket disconnected:", reason);
-      setStatus("Disconnected from server");
+      setConnectionStatus("disconnected");
+      setStatus("Disconnected from server - " + reason);
+    });
+
+    socket.on("reconnect", (attemptNumber) => {
+      console.log("🔄 Reconnected to server, attempt:", attemptNumber);
+      setConnectionStatus("connected");
+      setStatus("Reconnected, re-registering employee...");
+      socket.emit("registerEmployee", employeeId);
     });
 
     return () => {
@@ -143,15 +150,44 @@ export default function ChatEmployee() {
     setChat([]);
   };
 
+  const reconnect = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current.connect();
+      setStatus("Reconnecting...");
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-gray-100 p-6">
       <h1 className="text-2xl font-bold mb-4">Employee Chat Dashboard</h1>
       
       {/* Connection Status */}
       <div className="mb-4 p-3 bg-zinc-800 rounded-lg">
-        <p className="text-sm"><strong>Employee ID:</strong> {employeeId}</p>
-        <p className="text-sm"><strong>Status:</strong> {status}</p>
-        <p className="text-sm"><strong>Current Customer:</strong> {customerId || "None"}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm"><strong>Employee ID:</strong> {employeeId}</p>
+            <p className="text-sm"><strong>Status:</strong> {status}</p>
+            <p className="text-sm"><strong>Current Customer:</strong> {customerId || "None"}</p>
+            <p className="text-sm">
+              <strong>Connection:</strong> 
+              <span className={`ml-2 ${
+                connectionStatus === "connected" ? "text-green-400" : 
+                connectionStatus === "error" ? "text-red-400" : "text-yellow-400"
+              }`}>
+                {connectionStatus.toUpperCase()}
+              </span>
+            </p>
+          </div>
+          {connectionStatus !== "connected" && (
+            <button 
+              onClick={reconnect}
+              className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-500 font-semibold"
+            >
+              Reconnect
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Incoming Request */}
