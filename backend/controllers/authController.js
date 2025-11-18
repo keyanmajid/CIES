@@ -1,236 +1,171 @@
-// backend/socketServer.js - FIXED VERSION
+import User from "../models/User.js";
+import CustomerStats from "../models/CustomerStats.js";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import moment from "moment";
 
-export const setupSocketServer = (server) => {
-  const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
-    transports: ["polling", "websocket"],
-  });
+// Generate JWT token
+const generateToken = (userId, role) => {
+  return jwt.sign({ id: userId, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
+};
 
-  io.on("connection", (socket) => {
-    console.log("🟢 New connection:", socket.id);
+// ✅ FIXED: Universal signup for customers AND employees
+export const signup = async (req, res) => {
+  try {
+    // ✅ FIX: Extract role from request body
+    const { name, email, password, phone, role = "customer" } = req.body;
 
-    // ---------- REGISTER ----------
-    socket.on("registerCustomer", (customerId) => {
-      activeCustomers.set(customerId, socket.id);
-      console.log(`📝 Customer registered: ${customerId} -> ${socket.id}`);
-    });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: "User already exists" });
+    }
 
-    socket.on("registerEmployee", (employeeId) => {
-      activeEmployees.set(employeeId, { 
-        socketId: socket.id, 
-        status: "free", 
-        currentCustomer: null 
-      });
-      console.log(`👨‍💼 Employee registered: ${employeeId} -> ${socket.id}`);
-    });
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    // ---------- START INTERACTION ----------
-    socket.on("startInteraction", async ({ customerId, type }) => {
-      console.log(`🎯 Customer ${customerId} starting ${type} interaction`);
-      
-      const freeEmployee = [...activeEmployees.entries()].find(([, data]) => data.status === "free");
+    // ✅ FIX: Create user with dynamic role and score
+    const userData = {
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role // ✅ Use the role from request, not hardcoded
+    };
 
-      if (!freeEmployee) {
-        console.log(`❌ No free employees for customer ${customerId}`);
-        io.to(socket.id).emit("noEmployee", "No free employee available");
-        return;
-      }
+    // ✅ ADD: Set score for employees
+    if (role === "employee") {
+      userData.score = 100;
+    }
 
-      const [employeeId, empData] = freeEmployee;
-      console.log(`🎯 Assigning customer ${customerId} to employee ${employeeId}`);
+    // Create new user
+    const user = new User(userData);
+    await user.save();
 
-      // Send request to the first available employee
-      io.to(empData.socketId).emit("incomingRequest", { customerId, type });
+    // Generate token
+    const token = generateToken(user._id, user.role);
 
-      // Create new Interaction document
-      const interaction = new Interaction({
-        customerId,
-        employeeId,
-        type,
-        messages: [],
-        status: "pending",
-      });
-
-      try {
-        await interaction.save();
-        console.log(`💾 Interaction saved for customer ${customerId}`);
-      } catch (error) {
-        console.error("❌ Interaction Save Error:", error);
-        io.to(socket.id).emit("interactionError", "Failed to start interaction due to database error.");
-        return;
-      }
-
-      // Update employee status to "waiting" (not "busy" yet - they haven't accepted)
-      activeEmployees.set(employeeId, { 
-        ...empData, 
-        status: "waiting", 
-        currentCustomer: customerId 
-      });
-      
-      activeInteractions.set(customerId, interaction._id);
-      
-      console.log(`📊 Updated employee ${employeeId} status: waiting`);
-    });
-
-    // ---------- ACCEPT INTERACTION ----------
-    socket.on("acceptInteraction", async ({ employeeId, customerId }) => {
-      console.log(`✅ Employee ${employeeId} accepting chat with customer ${customerId}`);
-      
-      const emp = activeEmployees.get(employeeId);
-      if (emp) {
-        emp.status = "busy";
-        console.log(`📊 Updated employee ${employeeId} status: busy`);
-      }
-
-      const interactionId = activeInteractions.get(customerId);
-      if (interactionId) {
-        await Interaction.findByIdAndUpdate(interactionId, { status: "active" });
-        console.log(`📝 Updated interaction ${interactionId} status: active`);
-      }
-
-      const customerSocket = activeCustomers.get(customerId);
-      if (customerSocket) {
-        io.to(customerSocket).emit("interactionAccepted", { employeeId });
-        console.log(`🔔 Notified customer ${customerId} of acceptance`);
-      }
-    });
-
-    // ✅ FIXED: REJECT INTERACTION - PROPERLY REDIRECTS TO NEXT EMPLOYEE
-    socket.on("rejectInteraction", async ({ employeeId, customerId }) => {
-      console.log(`❌ Employee ${employeeId} rejecting chat with customer ${customerId}`);
-      
-      // Reset the rejecting employee's status
-      const rejectingEmp = activeEmployees.get(employeeId);
-      if (rejectingEmp) {
-        rejectingEmp.status = "free";
-        rejectingEmp.currentCustomer = null;
-        console.log(`📊 Reset employee ${employeeId} status: free`);
-      }
-
-      // Find the NEXT available employee (excluding the one who just rejected)
-      const availableEmployees = [...activeEmployees.entries()].filter(([id, data]) => 
-        data.status === "free" && id !== employeeId
+    // Track customer signup (only for customers)
+    if (role === "customer") {
+      const today = moment().format("YYYY-MM-DD");
+      await CustomerStats.findOneAndUpdate(
+        { date: today },
+        { $inc: { customerCount: 1 } },
+        { upsert: true }
       );
+    }
 
-      console.log(`🔍 Looking for next available employee. Found: ${availableEmployees.length} options`);
-
-      if (availableEmployees.length > 0) {
-        // Get the first available employee
-        const [nextEmployeeId, nextEmpData] = availableEmployees[0];
-        
-        console.log(`🔄 Redirecting customer ${customerId} to employee ${nextEmployeeId}`);
-        
-        // Update the new employee's status
-        activeEmployees.set(nextEmployeeId, {
-          ...nextEmpData,
-          status: "waiting",
-          currentCustomer: customerId
-        });
-
-        // Send the request to the new employee
-        io.to(nextEmpData.socketId).emit("incomingRequest", { 
-          customerId, 
-          type: "chat",
-          message: "Chat request redirected from another employee"
-        });
-
-        console.log(`📨 Sent redirected request to employee ${nextEmployeeId}`);
-      } else {
-        // No employees available - notify customer
-        console.log(`😞 No other employees available for customer ${customerId}`);
-        const customerSocket = activeCustomers.get(customerId);
-        if (customerSocket) {
-          io.to(customerSocket).emit("noEmployee", "All employees are currently busy. Please try again later.");
-        }
-        
-        // Clean up the interaction since no one can handle it
-        const interactionId = activeInteractions.get(customerId);
-        if (interactionId) {
-          await Interaction.findByIdAndUpdate(interactionId, { 
-            status: "rejected",
-            endTime: new Date()
-          });
-          activeInteractions.delete(customerId);
-        }
+    res.status(201).json({
+      success: true,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} created successfully`,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        score: user.score // Include score in response
       }
     });
+  } catch (error) {
+    console.error("Signup error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
 
-    // ---------- SEND MESSAGE ----------
-    socket.on("sendMessage", async ({ sender, receiverId, text, role, customerId }) => {
-      console.log(`💬 ${sender} sending message to ${receiverId}: ${text.substring(0, 50)}...`);
-      
-      let receiverSocket;
-      
-      if (role === "customer") {
-        // Sending to employee - get employee's socket ID
-        const employeeData = activeEmployees.get(receiverId);
-        receiverSocket = employeeData?.socketId;
-      } else {
-        // Sending to customer - get customer's socket ID directly
-        receiverSocket = activeCustomers.get(receiverId);
-      }
+// Login - UPDATED FUNCTION
+export const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-      if (receiverSocket) {
-        io.to(receiverSocket).emit("receiveMessage", { sender, text });
-        console.log(`📤 Message delivered to ${receiverId}`);
-      } else {
-        console.log(`❌ Could not find receiver ${receiverId}`);
-      }
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
 
-      // Save message to database
-      const interactionId = activeInteractions.get(customerId);
-      if (interactionId) {
-        const length = text.length;
-        const wordCount = text.split(/\s+/).filter(word => word.length > 0).length;
+    // Check password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
 
-        try {
-          await Interaction.findByIdAndUpdate(interactionId, {
-            $push: {
-              messages: { 
-                sender, 
-                text, 
-                timestamp: new Date(), 
-                length, 
-                wordCount 
-              },
-            },
-          });
-          console.log(`💾 Message saved to interaction ${interactionId}`);
-        } catch (error) {
-          console.error("❌ Error saving message:", error);
-        }
-      }
-    });
+    // Track customer login (only for customers)
+    if (user.role === "customer") {
+      const today = moment().format("YYYY-MM-DD");
+      await CustomerStats.findOneAndUpdate(
+        { date: today },
+        { $inc: { customerCount: 1 } },
+        { upsert: true }
+      );
+    }
 
-    // ---------- DISCONNECT ----------
-    socket.on("disconnect", () => {
-      console.log(`🔴 Socket disconnected: ${socket.id}`);
-      
-      // Clean up employees
-      for (const [id, data] of activeEmployees.entries()) {
-        if (data.socketId === socket.id) {
-          activeEmployees.delete(id);
-          console.log(`🧹 Removed employee ${id} from active list`);
-        }
-      }
-      
-      // Clean up customers
-      for (const [id, sId] of activeCustomers.entries()) {
-        if (sId === socket.id) {
-          activeCustomers.delete(id);
-          console.log(`🧹 Removed customer ${id} from active list`);
-        }
+    // Generate token
+    const token = generateToken(user._id, user.role);
+
+    res.json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        score: user.score // Include score in response
       }
     });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
 
-    // ---------- DEBUG ENDPOINT ----------
-    socket.on("getStatus", () => {
-      const status = {
-        activeCustomers: Array.from(activeCustomers.entries()),
-        activeEmployees: Array.from(activeEmployees.entries()),
-        activeInteractions: Array.from(activeInteractions.entries())
-      };
-      socket.emit("statusUpdate", status);
+// Manager adds employee
+export const managerAddEmployee = async (req, res) => {
+  try {
+    const { name, email, password, phone, role = "employee" } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: "User already exists" });
+    }
+
+    // Validate role
+    const allowedRoles = ["employee", "manager"];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create new employee with score
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role,
+      score: role === "employee" ? 100 : undefined
     });
-  });
+
+    await user.save();
+
+    res.status(201).json({
+      success: true,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} added successfully`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        score: user.score
+      }
+    });
+  } catch (error) {
+    console.error("Add employee error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };
