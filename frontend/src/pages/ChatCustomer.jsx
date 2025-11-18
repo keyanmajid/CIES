@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-// Assuming these dependencies are available in the execution environment
 import { Link } from "react-router-dom";
 import { ShoppingCart, ChevronLeft, ChevronRight, User } from "lucide-react"; 
 import { io } from "socket.io-client";
@@ -23,8 +22,6 @@ const mockProducts = [
 
 // Helper function for backend images (mocked for this environment)
 const backendImagePath = (filename) => {
-    // In a real environment, this would resolve image URLs. 
-    // Here we use a placeholder link since assets aren't local.
     const productMap = {
         "/products/keyboard.jpg": "https://placehold.co/100x100/334155/FFFFFF?text=KB",
         "/products/mouse.jpg": "https://placehold.co/100x100/475569/FFFFFF?text=Mouse",
@@ -68,7 +65,6 @@ export default function ChatCustomer() {
     useEffect(() => {
         localStorage.setItem("customerId", customerId);
 
-        // NOTE: Replace "http://localhost:5000" with your actual backend URL
         const socket = io("https://cies-5dc4.onrender.com", {
             transports: ["polling", "websocket"]
         });
@@ -86,12 +82,28 @@ export default function ChatCustomer() {
             setStatus("Connected to an employee");
         });
 
+        // ✅ NEW: Handle interaction ended event
+        socket.on("interactionEnded", ({ message }) => {
+            setStatus(message || "Chat session ended");
+            setEmployeeId(null);
+            setChat(prev => [...prev, { sender: "System", text: "Chat session completed" }]);
+        });
+
+        // ✅ NEW: Handle employee disconnected
+        socket.on("employeeDisconnected", ({ message }) => {
+            setStatus(message || "Employee disconnected");
+            setEmployeeId(null);
+            setChat(prev => [...prev, { sender: "System", text: "Employee disconnected. Please start a new chat." }]);
+        });
+
         const receiveHandler = ({ sender, text }) =>
             setChat(prev => [...prev, { sender, text }]);
         socket.on("receiveMessage", receiveHandler);
 
         return () => {
             socket.off("receiveMessage", receiveHandler);
+            socket.off("interactionEnded");
+            socket.off("employeeDisconnected");
             socket.disconnect();
             socketRef.current = null;
         };
@@ -121,13 +133,25 @@ export default function ChatCustomer() {
         setMessage("");
     };
 
+    // ✅ FIXED: Complete Interaction using Socket Event
     const completeInteraction = async () => {
         try {
-            await fetch(`https://cies-5dc4.onrender.com/api/interaction/complete/${customerId}`, {
-                method: "POST"
-            });
-            setStatus("Interaction completed ✅");
-            setEmployeeId(null);
+            const s = socketRef.current;
+            if (s && employeeId) {
+                // Use the new socket event to properly free the employee
+                s.emit("customerCompleteChat", { customerId });
+                setStatus("Chat completed ✅");
+                setEmployeeId(null);
+                setChat(prev => [...prev, { sender: "System", text: "You ended the chat session" }]);
+            } else {
+                // Fallback to API call if socket not available
+                await fetch(`https://cies-5dc4.onrender.com/api/interaction/complete/${customerId}`, {
+                    method: "POST"
+                });
+                setStatus("Interaction completed ✅");
+                setEmployeeId(null);
+                setChat(prev => [...prev, { sender: "System", text: "Chat session completed" }]);
+            }
         } catch (err) {
             console.error(err);
             setStatus("Error completing interaction ❌");
@@ -142,7 +166,6 @@ export default function ChatCustomer() {
             try {
                 const token = localStorage.getItem("token");
                 if (token) {
-                    // This is unsafe and for display mock only
                     const payload = JSON.parse(atob(token.split('.')[1])); 
                     if (payload.name) setUserName(payload.name.split(' ')[0]);
                     else if (payload.email) setUserName(payload.email.split('@')[0]);
@@ -205,11 +228,10 @@ export default function ChatCustomer() {
         { label: "Service Status", icon: "🟢" },
     ];
 
-
     return (
         <div className="min-h-screen w-full bg-cies-900 text-white font-sans">
             
-            {/* NAVBAR (Copied from Home.jsx) */}
+            {/* NAVBAR */}
             <nav className="flex items-center justify-between p-4 bg-cies-900 shadow-md sticky top-0 z-50">
                 <div className="flex items-center space-x-4">
                     {/* Burger Button */}
@@ -329,19 +351,12 @@ export default function ChatCustomer() {
             )}
             
             {/* MAIN CHAT CONTENT AREA */}
-            <div className="p-4 sm:p-8 
-                          bg-[linear-gradient(to_bottom_right,#0f0e1f,#05050a)] h-[calc(100vh-64px)] overflow-y-auto">
-
-              
-
-                {/* MAIN CHAT GRID (Responsive Grid/Flex) */}
+            <div className="p-4 sm:p-8 bg-[linear-gradient(to_bottom_right,#0f0e1f,#05050a)] h-[calc(100vh-64px)] overflow-y-auto">
+                {/* MAIN CHAT GRID */}
                 <div className="flex flex-col lg:grid lg:grid-cols-[280px_1fr] gap-4 lg:gap-6 h-full"> 
                     
-                    {/* LEFT SIDEBAR: ACCOUNT CONTEXT & QUICK LINKS 
-                        *** HIDDEN ON MOBILE (via hidden lg:block) ***
-                    */}
-                    <div className="hidden lg:block backdrop-blur-xl bg-white/5 p-4 sm:p-5 rounded-3xl 
-                                    shadow-2xl shadow-black/70 border border-white/20 overflow-y-auto"> 
+                    {/* LEFT SIDEBAR */}
+                    <div className="hidden lg:block backdrop-blur-xl bg-white/5 p-4 sm:p-5 rounded-3xl shadow-2xl shadow-black/70 border border-white/20 overflow-y-auto"> 
                         <h2 className="text-lg sm:text-xl font-bold mb-4 text-white border-b border-white/10 pb-2">
                             Account Context
                         </h2>
@@ -371,11 +386,10 @@ export default function ChatCustomer() {
                     {/* RIGHT CHAT PANEL CONTAINER */}
                     <div className="flex flex-col h-full w-full lg:col-span-1 min-h-[300px] lg:min-h-0">
                         
-                        {/* A. CHAT DISPLAY AREA + INPUT (Single Glass Panel) */}
-                        <div className="backdrop-blur-xl bg-white/5 rounded-3xl flex-1 
-                                        shadow-2xl shadow-black/70 border border-white/20 flex flex-col">
+                        {/* CHAT DISPLAY AREA + INPUT */}
+                        <div className="backdrop-blur-xl bg-white/5 rounded-3xl flex-1 shadow-2xl shadow-black/70 border border-white/20 flex flex-col">
                             
-                            {/* Chat Messages Area (Scrollable) */}
+                            {/* Chat Messages Area */}
                             <div className="p-4 flex-1 overflow-y-auto">
                                 {chat.length === 0 && !employeeId && (
                                     <p className="text-center text-white/50 italic pt-12">
@@ -387,22 +401,23 @@ export default function ChatCustomer() {
                                         <div className={`max-w-[85%] text-sm p-3 rounded-2xl 
                                             ${msg.sender === "You"
                                                 ? "bg-blue-600/80 text-white rounded-br-md"
+                                                : msg.sender === "System"
+                                                ? "bg-purple-600/60 text-white rounded-xl text-center"
                                                 : "bg-white/10 text-gray-200 rounded-tl-md border border-white/10" 
                                             }`}>
-                                            {msg.sender !== "You" && <span className="font-semibold text-xs text-blue-300 block mb-1">Employee</span>}
+                                            {msg.sender !== "You" && msg.sender !== "System" && <span className="font-semibold text-xs text-blue-300 block mb-1">Employee</span>}
                                             {msg.text}
                                         </div>
                                     </div>
                                 ))}
-                                <div ref={chatEndRef} /> {/* Scroll anchor */}
+                                <div ref={chatEndRef} />
                             </div>
 
-                            {/* Input Area (Fixed to bottom of glass panel) */}
+                            {/* Input Area */}
                             <div className="p-4 border-t border-white/10">
                                 <div className="flex space-x-3">
                                     <input
-                                        className="flex-1 p-3 sm:p-4 bg-white/10 rounded-2xl border border-white/20 text-gray-100 
-                                                    placeholder-white/50 focus:ring-2 focus:ring-blue-500 transition-shadow outline-none backdrop-blur-md text-sm sm:text-base"
+                                        className="flex-1 p-3 sm:p-4 bg-white/10 rounded-2xl border border-white/20 text-gray-100 placeholder-white/50 focus:ring-2 focus:ring-blue-500 transition-shadow outline-none backdrop-blur-md text-sm sm:text-base"
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
                                         onKeyPress={(e) => { if (e.key === 'Enter') sendMessage(); }}
@@ -421,7 +436,7 @@ export default function ChatCustomer() {
                             </div>
                         </div>
 
-                        {/* B. Status & Controls (Buttons below glass panel) */}
+                        {/* Status & Controls */}
                         <div className="mt-4">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-3 sm:space-y-0">
                                 <p className="text-sm font-medium px-3 py-1 rounded-full bg-blue-700/50 text-blue-300 w-fit">
@@ -439,10 +454,10 @@ export default function ChatCustomer() {
                                     <button 
                                         onClick={completeInteraction} 
                                         className={`px-5 py-2 rounded-xl text-sm sm:text-base font-semibold transition-colors 
-                                            ${employeeId ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-700 cursor-not-allowed'}`}
+                                            ${employeeId ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-700 cursor-not-allowed'}`}
                                         disabled={!employeeId}
                                     >
-                                        Complete
+                                        Complete Chat
                                     </button>
                                 </div>
                             </div>

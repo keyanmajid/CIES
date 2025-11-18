@@ -1,6 +1,6 @@
 // backend/socketServer.js
 import { Server } from "socket.io";
-import express from "express"; // ✅ needed for router
+import express from "express";
 import Interaction from "./models/Interaction.js";
 
 // Export these Maps so they can be accessed from other files
@@ -10,8 +10,6 @@ export const activeInteractions = new Map();
 
 // Express router for ML dataset endpoint
 export const router = express.Router();
-
-// backend/socketServer.js - FIXED VERSION
 
 export const setupSocketServer = (server) => {
   const io = new Server(server, {
@@ -41,6 +39,23 @@ export const setupSocketServer = (server) => {
     socket.on("startInteraction", async ({ customerId, type }) => {
       console.log(`🎯 Customer ${customerId} starting ${type} interaction`);
       
+      // Check if customer already has a pending interaction
+      const existingInteractionId = activeInteractions.get(customerId);
+      if (existingInteractionId) {
+        console.log(`ℹ️ Customer ${customerId} already has an active interaction`);
+        
+        // Check if the assigned employee is still available
+        const existingInteraction = await Interaction.findById(existingInteractionId);
+        if (existingInteraction && existingInteraction.employeeId) {
+          const assignedEmployee = activeEmployees.get(existingInteraction.employeeId);
+          if (assignedEmployee && assignedEmployee.status === "waiting") {
+            // Employee is still waiting - don't create new interaction
+            console.log(`🔄 Customer ${customerId} already assigned to employee ${existingInteraction.employeeId}`);
+            return;
+          }
+        }
+      }
+
       const freeEmployee = [...activeEmployees.entries()].find(([, data]) => data.status === "free");
 
       if (!freeEmployee) {
@@ -52,28 +67,41 @@ export const setupSocketServer = (server) => {
       const [employeeId, empData] = freeEmployee;
       console.log(`🎯 Assigning customer ${customerId} to employee ${employeeId}`);
 
-      // Send request to the first available employee
-      io.to(empData.socketId).emit("incomingRequest", { customerId, type });
-
-      // Create new Interaction document
-      const interaction = new Interaction({
-        customerId,
-        employeeId,
-        type,
-        messages: [],
-        status: "pending",
-      });
-
-      try {
+      // Update existing interaction or create new one
+      let interaction;
+      if (existingInteractionId) {
+        // Update existing interaction with new employee
+        interaction = await Interaction.findByIdAndUpdate(
+          existingInteractionId,
+          { 
+            employeeId,
+            status: "pending",
+            $set: { messages: [] } // Clear previous messages if any
+          },
+          { new: true }
+        );
+        console.log(`🔄 Updated existing interaction for customer ${customerId}`);
+      } else {
+        // Create new Interaction document
+        interaction = new Interaction({
+          customerId,
+          employeeId,
+          type,
+          messages: [],
+          status: "pending",
+        });
         await interaction.save();
-        console.log(`💾 Interaction saved for customer ${customerId}`);
-      } catch (error) {
-        console.error("❌ Interaction Save Error:", error);
-        io.to(socket.id).emit("interactionError", "Failed to start interaction due to database error.");
-        return;
+        console.log(`💾 New interaction saved for customer ${customerId}`);
       }
 
-      // Update employee status to "waiting" (not "busy" yet - they haven't accepted)
+      // Send request to the first available employee
+      io.to(empData.socketId).emit("incomingRequest", { 
+        customerId, 
+        type,
+        redirected: !!existingInteractionId // Indicate if this is a redirected request
+      });
+
+      // Update employee status to "waiting"
       activeEmployees.set(employeeId, { 
         ...empData, 
         status: "waiting", 
@@ -120,6 +148,20 @@ export const setupSocketServer = (server) => {
         console.log(`📊 Reset employee ${employeeId} status: free`);
       }
 
+      // ✅ FIX: Update the interaction document to remove the assigned employee
+      const interactionId = activeInteractions.get(customerId);
+      if (interactionId) {
+        try {
+          await Interaction.findByIdAndUpdate(interactionId, { 
+            employeeId: null, // Remove the assigned employee
+            status: "pending" // Reset status to pending
+          });
+          console.log(`📝 Reset interaction ${interactionId} - removed employee assignment`);
+        } catch (error) {
+          console.error("❌ Error updating interaction:", error);
+        }
+      }
+
       // Find the NEXT available employee (excluding the one who just rejected)
       const availableEmployees = [...activeEmployees.entries()].filter(([id, data]) => 
         data.status === "free" && id !== employeeId
@@ -140,11 +182,18 @@ export const setupSocketServer = (server) => {
           currentCustomer: customerId
         });
 
+        // ✅ FIX: Update the interaction with the new employee ID
+        if (interactionId) {
+          await Interaction.findByIdAndUpdate(interactionId, {
+            employeeId: nextEmployeeId
+          });
+        }
+
         // Send the request to the new employee
         io.to(nextEmpData.socketId).emit("incomingRequest", { 
           customerId, 
           type: "chat",
-          message: "Chat request redirected from another employee"
+          redirected: true // Add flag to indicate this is a redirected request
         });
 
         console.log(`📨 Sent redirected request to employee ${nextEmployeeId}`);
@@ -157,7 +206,6 @@ export const setupSocketServer = (server) => {
         }
         
         // Clean up the interaction since no one can handle it
-        const interactionId = activeInteractions.get(customerId);
         if (interactionId) {
           await Interaction.findByIdAndUpdate(interactionId, { 
             status: "rejected",
@@ -215,6 +263,107 @@ export const setupSocketServer = (server) => {
       }
     });
 
+    // ✅ NEW: COMPLETE INTERACTION - FREES EMPLOYEE
+    socket.on("completeInteraction", async ({ customerId, employeeId }) => {
+      console.log(`🏁 Completing interaction for customer ${customerId} with employee ${employeeId}`);
+      
+      // Free the employee
+      const emp = activeEmployees.get(employeeId);
+      if (emp) {
+        emp.status = "free";
+        emp.currentCustomer = null;
+        console.log(`📊 Freed employee ${employeeId} - status: free`);
+        
+        // Notify employee that chat is completed
+        io.to(emp.socketId).emit("interactionCompleted", { customerId });
+      }
+
+      // Update interaction status
+      const interactionId = activeInteractions.get(customerId);
+      if (interactionId) {
+        try {
+          await Interaction.findByIdAndUpdate(interactionId, { 
+            status: "completed",
+            endTime: new Date()
+          });
+          console.log(`📝 Marked interaction ${interactionId} as completed`);
+        } catch (error) {
+          console.error("❌ Error updating interaction status:", error);
+        }
+        
+        // Clean up
+        activeInteractions.delete(customerId);
+      }
+
+      // Notify customer
+      const customerSocket = activeCustomers.get(customerId);
+      if (customerSocket) {
+        io.to(customerSocket).emit("interactionEnded", { 
+          message: "Chat session completed successfully" 
+        });
+      }
+
+      console.log(`✅ Interaction completed for customer ${customerId}`);
+    });
+
+    // ✅ NEW: CUSTOMER COMPLETE CHAT ENDPOINT
+    socket.on("customerCompleteChat", async ({ customerId }) => {
+      console.log(`🏁 Customer ${customerId} requesting to complete chat`);
+      
+      const interactionId = activeInteractions.get(customerId);
+      if (!interactionId) {
+        console.log(`❌ No active interaction found for customer ${customerId}`);
+        return;
+      }
+
+      try {
+        const interaction = await Interaction.findById(interactionId);
+        if (!interaction || !interaction.employeeId) {
+          console.log(`❌ No employee assigned to interaction ${interactionId}`);
+          return;
+        }
+
+        const employeeId = interaction.employeeId;
+        
+        // Free the employee
+        const emp = activeEmployees.get(employeeId);
+        if (emp) {
+          emp.status = "free";
+          emp.currentCustomer = null;
+          console.log(`📊 Freed employee ${employeeId} - status: free`);
+          
+          // Notify employee that chat is completed by customer
+          io.to(emp.socketId).emit("interactionCompleted", { 
+            customerId,
+            completedBy: "customer" 
+          });
+        }
+
+        // Update interaction status
+        await Interaction.findByIdAndUpdate(interactionId, { 
+          status: "completed",
+          endTime: new Date(),
+          completedBy: "customer"
+        });
+        console.log(`📝 Marked interaction ${interactionId} as completed by customer`);
+
+        // Clean up
+        activeInteractions.delete(customerId);
+
+        // Notify customer
+        const customerSocket = activeCustomers.get(customerId);
+        if (customerSocket) {
+          io.to(customerSocket).emit("interactionEnded", { 
+            message: "Chat session completed successfully" 
+          });
+        }
+
+        console.log(`✅ Chat completed by customer ${customerId}, employee ${employeeId} freed`);
+      } catch (error) {
+        console.error("❌ Error completing chat:", error);
+      }
+    });
+
     // ---------- DISCONNECT ----------
     socket.on("disconnect", () => {
       console.log(`🔴 Socket disconnected: ${socket.id}`);
@@ -222,6 +371,18 @@ export const setupSocketServer = (server) => {
       // Clean up employees
       for (const [id, data] of activeEmployees.entries()) {
         if (data.socketId === socket.id) {
+          // If employee was busy with a customer, free that customer
+          if (data.currentCustomer) {
+            const customerSocket = activeCustomers.get(data.currentCustomer);
+            if (customerSocket) {
+              io.to(customerSocket).emit("employeeDisconnected", {
+                message: "Employee disconnected. Please start a new chat."
+              });
+            }
+            // Clean up the interaction
+            activeInteractions.delete(data.currentCustomer);
+          }
+          
           activeEmployees.delete(id);
           console.log(`🧹 Removed employee ${id} from active list`);
         }
@@ -230,6 +391,26 @@ export const setupSocketServer = (server) => {
       // Clean up customers
       for (const [id, sId] of activeCustomers.entries()) {
         if (sId === socket.id) {
+          // If customer was in an active chat, free the employee
+          const interactionId = activeInteractions.get(id);
+          if (interactionId) {
+            try {
+              Interaction.findById(interactionId).then(interaction => {
+                if (interaction && interaction.employeeId) {
+                  const emp = activeEmployees.get(interaction.employeeId);
+                  if (emp) {
+                    emp.status = "free";
+                    emp.currentCustomer = null;
+                    console.log(`📊 Freed employee ${interaction.employeeId} due to customer disconnect`);
+                  }
+                }
+              });
+            } catch (error) {
+              console.error("Error handling customer disconnect:", error);
+            }
+            activeInteractions.delete(id);
+          }
+          
           activeCustomers.delete(id);
           console.log(`🧹 Removed customer ${id} from active list`);
         }
@@ -247,7 +428,6 @@ export const setupSocketServer = (server) => {
     });
   });
 };
-
 
 // ---------- ML Dataset Endpoint ----------
 router.get("/ml-dataset", async (req, res) => {
