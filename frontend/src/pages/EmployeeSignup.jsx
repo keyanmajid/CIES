@@ -1,12 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const Signup = () => {
+const EmployeeSignup = () => {
   const navigate = useNavigate();
+
+  // Check if user is manager
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const userData = localStorage.getItem("user");
+    
+    if (!token) {
+      alert("Please login first");
+      navigate("/login");
+      return;
+    }
+
+    if (userData) {
+      const user = JSON.parse(userData);
+      if (user.role !== "manager") {
+        alert("Only managers can access this page");
+        navigate("/dashboard");
+        return;
+      }
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    const token = localStorage.getItem("token");
+    
     const data = {
       name: `${e.target.firstName.value} ${e.target.lastName.value}`,
       email: e.target.email.value,
@@ -15,21 +38,26 @@ const Signup = () => {
     };
 
     try {
-      const res = await fetch("https://cies-5dc4.onrender.com/api/auth/signup", {
+      // ✅ FIXED: Use the MANAGER PROTECTED endpoint with authorization
+      const res = await fetch("https://cies-5dc4.onrender.com/api/auth/manager/employees", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // Manager's token
+        },
         body: JSON.stringify(data),
       });
 
       const result = await res.json();
-      if (res.ok) {
-        if (result.token) {
-          localStorage.setItem("token", result.token);
-        }
-        alert("Signup Successful ✅");
-        navigate("/CustomerCare");
+      
+      if (res.ok && result.success) {
+        alert("Employee created successfully ✅");
+        // Reset form
+        e.target.reset();
+        // Navigate back to employees list
+        navigate("/manager/employees");
       } else {
-        alert(result.message || "Signup failed ❌");
+        alert(result.message || "Failed to create employee ❌");
       }
     } catch (error) {
       console.error('Signup error:', error);
@@ -53,9 +81,9 @@ const Signup = () => {
           <div className="absolute bottom-0 right-0 w-40 h-40 bg-white bg-opacity-10 rounded-full translate-x-20 translate-y-20"></div>
           
           <div className="relative z-10 text-center">
-            <h1 className="text-4xl font-bold mb-4">Join Our Creative Community</h1>
+            <h1 className="text-4xl font-bold mb-4">Add New Employee</h1>
             <p className="text-lg opacity-90 mb-6">
-              Share your artwork with thousands of artists and get discovered by clients worldwide.
+              Create employee accounts for your team members.
             </p>
           </div>
         </div>
@@ -63,8 +91,8 @@ const Signup = () => {
         {/* Right Side - Sign Up Form */}
         <div className="md:w-1/2 p-8">
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-800">Create your Account</h2>
-            <p className="text-gray-600 mt-2">Share your artwork and Get projects!</p>
+            <h2 className="text-3xl font-bold text-gray-800">Create Employee Account</h2>
+            <p className="text-gray-600 mt-2">Manager Access Required</p>
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
@@ -110,7 +138,7 @@ const Signup = () => {
                 name="email"
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                placeholder="john@example.com"
+                placeholder="employee@company.com"
               />
             </div>
 
@@ -140,57 +168,39 @@ const Signup = () => {
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label htmlFor="terms" className="ml-2 block text-sm text-gray-700">
-                Accept Terms & Conditions
+                I confirm I'm creating an employee account
               </label>
             </div>
 
             {/* Sign Up Button */}
             <button
               type="submit"
-              className="w-full bg-black text-white py-3 px-4 rounded-lg font-semibold hover:bg-gray-800 transition shadow-lg"
+              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition shadow-lg"
             >
-              Join us
+              Create Employee Account
             </button>
 
-            {/* Login link */}
+            {/* Back to dashboard */}
             <p className="text-center text-sm text-gray-600 mt-4">
-              Already have an account?{" "}
-              <a href="/login" className="text-blue-600 hover:underline">
-                Log in
+              Back to{" "}
+              <a href="/CustomerCare" className="text-blue-600 hover:underline">
+                Dashboard
               </a>
             </p>
 
             {/* Divider */}
             <div className="relative flex items-center my-6">
               <div className="flex-grow border-t border-gray-300"></div>
-              <span className="flex-shrink mx-4 text-gray-500 text-sm">or</span>
+              <span className="flex-shrink mx-4 text-gray-500 text-sm">Manager Access Only</span>
               <div className="flex-grow border-t border-gray-300"></div>
             </div>
 
-            {/* Social Sign Up Buttons */}
-            <div className="space-y-3">
-              <button
-                type="button"
-                className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-              >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Sign up with Google
-              </button>
-
-              <button
-                type="button"
-                className="w-full bg-black text-white flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-900 transition"
-              >
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M17.05 12.04C17.05 8.35 14.42 6.46 11.23 6.46C7.7 6.46 5.5 8.53 5.5 11.22C5.5 14.56 8.17 15.93 10.97 15.93C12.25 15.93 13.4 15.7 14.05 15.42L13.8 17.2C13.33 17.37 12.45 17.55 11.47 17.55C7.94 17.55 5.11 15.5 5.11 11.97C5.11 8.44 7.93 5.5 11.65 5.5C15.1 5.5 17.05 7.9 17.05 10.9C17.05 13.58 15.69 14.87 13.9 14.87C12.62 14.87 11.77 14.1 11.96 12.85H11.94C12.25 12.85 14.12 12.84 14.12 10.92C14.12 9.33 13.18 8.46 11.65 8.46C9.95 8.46 8.87 9.6 8.87 11.51C8.87 13.58 10.08 14.2 10.97 14.2C11.55 14.2 12.05 13.88 12.05 13.28C12.05 12.12 10.73 12.32 10.73 11.23C10.73 10.84 11.02 10.54 11.46 10.54C11.89 10.54 12.18 10.82 12.18 11.23H12.19C12.19 12.04 17.05 12.04 17.05 12.04Z"/>
-                </svg>
-                Sign up with Apple
-              </button>
+            {/* Info Box */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Only managers can create employee accounts. 
+                New employees will start with a score of 100 and can be managed from the Employees page.
+              </p>
             </div>
           </form>
         </div>
@@ -199,4 +209,4 @@ const Signup = () => {
   );
 };
 
-export default Signup;
+export default EmployeeSignup;

@@ -9,10 +9,11 @@ const generateToken = (userId, role) => {
   return jwt.sign({ id: userId, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
 };
 
-// Customer signup
+// ✅ FIXED: Universal signup for customers AND employees
 export const signup = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    // ✅ FIX: Extract role from request body
+    const { name, email, password, phone, role = "customer" } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -23,29 +24,47 @@ export const signup = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create new user
-    const user = new User({
+    // ✅ FIX: Create user with dynamic role and score
+    const userData = {
       name,
       email,
       password: hashedPassword,
       phone,
-      role: "customer"
-    });
+      role // ✅ Use the role from request, not hardcoded
+    };
 
+    // ✅ ADD: Set score for employees
+    if (role === "employee") {
+      userData.score = 100;
+    }
+
+    // Create new user
+    const user = new User(userData);
     await user.save();
 
     // Generate token
     const token = generateToken(user._id, user.role);
 
+    // Track customer signup (only for customers)
+    if (role === "customer") {
+      const today = moment().format("YYYY-MM-DD");
+      await CustomerStats.findOneAndUpdate(
+        { date: today },
+        { $inc: { customerCount: 1 } },
+        { upsert: true }
+      );
+    }
+
     res.status(201).json({
       success: true,
-      message: "User created successfully",
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} created successfully`,
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        score: user.score // Include score in response
       }
     });
   } catch (error) {
@@ -71,13 +90,15 @@ export const login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // ✅ NEW: Track customer login
-    const today = moment().format("YYYY-MM-DD");
-    await CustomerStats.findOneAndUpdate(
-      { date: today },
-      { $inc: { customerCount: 1 } },
-      { upsert: true }
-    );
+    // Track customer login (only for customers)
+    if (user.role === "customer") {
+      const today = moment().format("YYYY-MM-DD");
+      await CustomerStats.findOneAndUpdate(
+        { date: today },
+        { $inc: { customerCount: 1 } },
+        { upsert: true }
+      );
+    }
 
     // Generate token
     const token = generateToken(user._id, user.role);
@@ -90,7 +111,8 @@ export const login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        score: user.score // Include score in response
       }
     });
   } catch (error) {
@@ -102,7 +124,7 @@ export const login = async (req, res) => {
 // Manager adds employee
 export const managerAddEmployee = async (req, res) => {
   try {
-    const { name, email, password, phone, role } = req.body;
+    const { name, email, password, phone, role = "employee" } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -119,25 +141,27 @@ export const managerAddEmployee = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create new employee
+    // Create new employee with score
     const user = new User({
       name,
       email,
       password: hashedPassword,
       phone,
-      role
+      role,
+      score: role === "employee" ? 100 : undefined
     });
 
     await user.save();
 
     res.status(201).json({
       success: true,
-      message: "Employee added successfully",
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} added successfully`,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        score: user.score
       }
     });
   } catch (error) {
