@@ -8,17 +8,17 @@ export default function ChatEmployee() {
   const [incoming, setIncoming] = useState(null);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("Initializing...");
-  const [socketStatus, setSocketStatus] = useState({});
   const socketRef = useRef(null);
 
   useEffect(() => {
     console.log("🚀 Initializing employee chat with ID:", employeeId);
     
     const socket = io("https://cies-5dc4.onrender.com", {
-      transports: ["polling", "websocket"],
+      transports: ["websocket", "polling"], // Changed order for better connection
       reconnection: true,
       reconnectionAttempts: 10,
-      reconnectionDelay: 1000
+      reconnectionDelay: 1000,
+      timeout: 20000
     });
     
     socketRef.current = socket;
@@ -29,7 +29,6 @@ export default function ChatEmployee() {
       
       socket.emit("registerEmployee", employeeId);
       setStatus("✅ Registered and waiting for customers...");
-      checkSocketStatus();
     });
 
     socket.on("incomingRequest", (data) => {
@@ -47,6 +46,23 @@ export default function ChatEmployee() {
       setChat(prev => [...prev, { sender: "Customer", text }]);
     });
 
+    // ✅ NEW: Handle interaction completed
+    socket.on("interactionCompleted", ({ customerId, completedBy }) => {
+      console.log(`🏁 Interaction completed by ${completedBy || 'system'}`);
+      setStatus("Chat completed. Waiting for new requests...");
+      setCustomerId(null);
+      setChat([]);
+      setIncoming(null);
+    });
+
+    // ✅ NEW: Handle customer disconnect
+    socket.on("customerDisconnected", ({ customerId }) => {
+      console.log(`🔴 Customer ${customerId} disconnected`);
+      setStatus("Customer disconnected. Waiting for new requests...");
+      setCustomerId(null);
+      setChat(prev => [...prev, { sender: "System", text: "Customer disconnected from chat" }]);
+    });
+
     socket.on("connect_error", (err) => {
       console.error("❌ Socket connect_error:", err);
       setStatus("Connection error: " + err.message);
@@ -58,22 +74,12 @@ export default function ChatEmployee() {
     });
 
     return () => {
+      console.log("🧹 Cleaning up socket connection");
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
     };
   }, [employeeId]);
-
-  const checkSocketStatus = async () => {
-    try {
-      const response = await fetch("https://cies-5dc4.onrender.com/api/debug/socket-status");
-      const data = await response.json();
-      setSocketStatus(data);
-      console.log("📊 Current socket status:", data);
-    } catch (error) {
-      console.error("Error checking socket status:", error);
-    }
-  };
 
   const acceptChat = () => {
     if (!incoming) return;
@@ -122,31 +128,30 @@ export default function ChatEmployee() {
     setMessage("");
   };
 
+  const completeChat = () => {
+    if (!customerId) return;
+    
+    console.log("🏁 Employee completing chat with customer:", customerId);
+    
+    socketRef.current.emit("completeInteraction", { 
+      customerId: customerId,
+      employeeId: employeeId
+    });
+    
+    setStatus("Chat completed. Waiting for new requests...");
+    setCustomerId(null);
+    setChat([]);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-gray-100 p-6">
       <h1 className="text-2xl font-bold mb-4">Employee Chat Dashboard</h1>
       
-      {/* Debug Info */}
+      {/* Connection Status */}
       <div className="mb-4 p-3 bg-zinc-800 rounded-lg">
         <p className="text-sm"><strong>Employee ID:</strong> {employeeId}</p>
         <p className="text-sm"><strong>Status:</strong> {status}</p>
         <p className="text-sm"><strong>Current Customer:</strong> {customerId || "None"}</p>
-        
-        {/* Socket Status Summary */}
-        {socketStatus.summary && (
-          <div className="mt-2 p-2 bg-zinc-700 rounded">
-            <p className="text-xs font-semibold">System Status:</p>
-            <p className="text-xs">Free Employees: {socketStatus.summary.freeEmployees}</p>
-            <p className="text-xs">Total Customers: {socketStatus.summary.totalCustomers}</p>
-          </div>
-        )}
-        
-        <button 
-          onClick={checkSocketStatus}
-          className="mt-2 bg-blue-600 px-3 py-1 rounded text-sm hover:bg-blue-500"
-        >
-          Refresh Status
-        </button>
       </div>
 
       {/* Incoming Request */}
@@ -175,10 +180,18 @@ export default function ChatEmployee() {
       {/* Chat Area */}
       <div className="bg-zinc-900 p-4 rounded-2xl flex-1 overflow-y-auto border border-gray-800 mb-4">
         {chat.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No messages yet. Waiting for customer...</p>
+          <p className="text-gray-500 text-center py-8">
+            {customerId ? "No messages yet. Start chatting with the customer..." : "Waiting for customer requests..."}
+          </p>
         ) : (
           chat.map((msg, i) => (
-            <div key={i} className={`mb-3 p-2 rounded-lg ${msg.sender === "You" ? "bg-green-900 text-green-100 text-right" : msg.sender === "System" ? "bg-gray-700 text-gray-300 text-center" : "bg-blue-900 text-blue-100"}`}>
+            <div key={i} className={`mb-3 p-3 rounded-lg ${
+              msg.sender === "You" 
+                ? "bg-green-900 text-green-100 text-right" 
+                : msg.sender === "System" 
+                ? "bg-gray-700 text-gray-300 text-center" 
+                : "bg-blue-900 text-blue-100"
+            }`}>
               <span className="font-semibold">{msg.sender}:</span> {msg.text}
             </div>
           ))
@@ -187,7 +200,7 @@ export default function ChatEmployee() {
 
       {/* Message Input */}
       {customerId && (
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 mb-4">
           <input
             className="flex-1 p-3 bg-zinc-800 rounded-xl border border-gray-700 text-gray-100"
             value={message}
@@ -202,6 +215,16 @@ export default function ChatEmployee() {
             Send
           </button>
         </div>
+      )}
+
+      {/* Complete Chat Button */}
+      {customerId && (
+        <button 
+          onClick={completeChat}
+          className="bg-purple-600 px-6 py-3 rounded-xl hover:bg-purple-500 font-semibold"
+        >
+          Complete Chat
+        </button>
       )}
     </div>
   );
