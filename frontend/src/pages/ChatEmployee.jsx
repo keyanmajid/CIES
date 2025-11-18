@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 export default function ChatEmployee() {
+  // State variables
   const [employeeId] = useState("6910a4bbffb46343c6ce9d20");
   const [customerId, setCustomerId] = useState(null);
   const [chat, setChat] = useState([]);
@@ -9,22 +10,35 @@ export default function ChatEmployee() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("Initializing...");
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
+  
+  // Refs
   const socketRef = useRef(null);
+  const chatEndRef = useRef(null); // Ref for auto-scrolling
 
+  // Function to scroll to the bottom of the chat
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // --- Effect for Socket Connection and Listeners ---
   useEffect(() => {
     console.log("🚀 Initializing employee chat with ID:", employeeId);
     
+    // FIX 1: Enhanced Socket.IO configuration for stability (Disconnection issue)
     const socket = io("https://cies-5dc4.onrender.com", {
       transports: ["websocket", "polling"],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10, // Increased attempts
       reconnectionDelay: 1000,
-      timeout: 10000,
-      forceNew: true
+      timeout: 20000, // Increased timeout for slower networks
+      pingInterval: 25000, // Keep-alive signal (must be < server's timeout)
+      pingTimeout: 15000,
+      forceNew: true // Useful if component is mounted/unmounted frequently
     });
     
     socketRef.current = socket;
 
+    // Connection Events
     socket.on("connect", () => {
       console.log("🟢 Employee socket connected:", socket.id);
       setConnectionStatus("connected");
@@ -33,32 +47,7 @@ export default function ChatEmployee() {
       // Register employee
       socket.emit("registerEmployee", employeeId);
       setStatus("✅ Registered and waiting for customers...");
-      
       console.log("📊 Employee registration complete");
-    });
-
-    socket.on("incomingRequest", (data) => {
-      console.log("📨 INCOMING REQUEST RECEIVED:", data);
-      setIncoming({ 
-        customerId: data.customerId, 
-        type: data.type,
-        message: `Customer ${data.customerId} wants to ${data.type}` 
-      });
-      setStatus("🎯 Incoming chat request! Accept or reject?");
-    });
-
-    socket.on("receiveMessage", ({ sender, text }) => {
-      console.log("💬 Message received from customer:", text);
-      setChat(prev => [...prev, { sender: "Customer", text }]);
-    });
-
-    // Handle interaction completed
-    socket.on("interactionCompleted", ({ customerId, completedBy }) => {
-      console.log(`🏁 Interaction completed by ${completedBy || 'system'}`);
-      setStatus("Chat completed. Waiting for new requests...");
-      setCustomerId(null);
-      setChat([]);
-      setIncoming(null);
     });
 
     socket.on("connect_error", (err) => {
@@ -77,16 +66,63 @@ export default function ChatEmployee() {
       console.log("🔄 Reconnected to server, attempt:", attemptNumber);
       setConnectionStatus("connected");
       setStatus("Reconnected, re-registering employee...");
+      // Re-register is CRUCIAL after a reconnect
       socket.emit("registerEmployee", employeeId);
     });
 
+    // Chat Events
+    // FIX 2: This is the event your server MUST emit to route requests (Incoming Request issue)
+    socket.on("incomingRequest", (data) => {
+      console.log("📨 INCOMING REQUEST RECEIVED:", data);
+      setIncoming({ 
+        customerId: data.customerId, 
+        type: data.type,
+        message: `Customer ${data.customerId} wants to ${data.type}` 
+      });
+      setStatus("🎯 Incoming chat request! Accept or reject?");
+    });
+
+    socket.on("receiveMessage", ({ sender, text }) => {
+      console.log("💬 Message received from customer:", text);
+      setChat(prev => {
+        const newChat = [...prev, { sender: "Customer", text }];
+        // Scroll to bottom after state update
+        setTimeout(scrollToBottom, 50); 
+        return newChat;
+      });
+    });
+
+    // Handle interaction completed
+    socket.on("interactionCompleted", ({ customerId: completedCustomerId, completedBy }) => {
+      console.log(`🏁 Interaction completed by ${completedBy || 'system'} for customer ${completedCustomerId}`);
+      
+      // Only reset if the completed chat is the current active one
+      if (completedCustomerId === customerId) {
+        setStatus("Chat completed. Waiting for new requests...");
+        setCustomerId(null);
+        setChat([]);
+        setIncoming(null);
+      }
+    });
+
+    // Cleanup function
     return () => {
       console.log("🧹 Cleaning up socket connection");
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
     };
-  }, [employeeId]);
+  }, [employeeId, customerId]);
+
+  // --- Effect for Auto-Scrolling on initial chat load ---
+  useEffect(() => {
+    if (chat.length > 0) {
+      scrollToBottom();
+    }
+  }, [chat]);
+
+
+  // --- Event Handlers ---
 
   const acceptChat = () => {
     if (!incoming) return;
@@ -102,8 +138,10 @@ export default function ChatEmployee() {
     setIncoming(null);
     setStatus(`💬 Chat active with customer ${incoming.customerId}`);
     setChat(prev => [...prev, { sender: "System", text: "Chat started with customer" }]);
+    setTimeout(scrollToBottom, 50);
   };
 
+  // Rejecting chat: This sends the signal to the server.
   const rejectChat = () => {
     if (!incoming) return;
     
@@ -131,7 +169,11 @@ export default function ChatEmployee() {
       customerId: customerId
     });
     
-    setChat(prev => [...prev, { sender: "You", text: message }]);
+    setChat(prev => {
+      const newChat = [...prev, { sender: "You", text: message }];
+      setTimeout(scrollToBottom, 50);
+      return newChat;
+    });
     setMessage("");
   };
 
@@ -148,15 +190,19 @@ export default function ChatEmployee() {
     setStatus("Chat completed. Waiting for new requests...");
     setCustomerId(null);
     setChat([]);
+    setIncoming(null);
   };
 
   const reconnect = () => {
-    if (socketRef.current) {
+    if (socketRef.current && connectionStatus !== "connected") {
+      // Disconnect first to ensure a clean connection attempt
       socketRef.current.disconnect();
       socketRef.current.connect();
       setStatus("Reconnecting...");
     }
   };
+
+  // --- Render ---
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-gray-100 p-6">
@@ -223,15 +269,16 @@ export default function ChatEmployee() {
           chat.map((msg, i) => (
             <div key={i} className={`mb-3 p-3 rounded-lg ${
               msg.sender === "You" 
-                ? "bg-green-900 text-green-100 text-right" 
+                ? "bg-green-900 text-green-100 text-right ml-auto max-w-[80%]" 
                 : msg.sender === "System" 
-                ? "bg-gray-700 text-gray-300 text-center" 
-                : "bg-blue-900 text-blue-100"
+                ? "bg-gray-700 text-gray-300 text-center w-full" 
+                : "bg-blue-900 text-blue-100 mr-auto max-w-[80%]"
             }`}>
               <span className="font-semibold">{msg.sender}:</span> {msg.text}
             </div>
           ))
         )}
+        <div ref={chatEndRef} /> {/* Auto-scroll target */}
       </div>
 
       {/* Message Input */}
