@@ -13,7 +13,7 @@ import ManagerEmployees from "./pages/ManagerEmployees";
 import ChatCustomer from "./pages/ChatCustomer";
 import ChatEmployee from "./pages/ChatEmployee";
 import EmployeeDashboard from "./pages/EmployeeDashboard ";
-import ProductPageWithNavbar from "./pages/products";
+import ProductPageWithNavbar from "./pages/Products";
 import { RecommendationProvider } from './context/RecommendationContext';
 export default function App() {
   return (
