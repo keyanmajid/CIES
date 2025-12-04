@@ -1,10 +1,31 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const ManagerEmployees = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
+    // Check if user is manager
+    const token = localStorage.getItem("token");
+    const userData = localStorage.getItem("user");
+    
+    if (!token) {
+      alert("Please login first");
+      navigate("/login");
+      return;
+    }
+
+    if (userData) {
+      const user = JSON.parse(userData);
+      if (user.role !== "manager") {
+        alert("Only managers can access this page");
+        navigate("/care");
+        return;
+      }
+    }
+
     const fetchEmployees = async () => {
       try {
         const token = localStorage.getItem("token");
@@ -14,15 +35,14 @@ const ManagerEmployees = () => {
           },
         });
         const data = await res.json();
-if (Array.isArray(data)) {
-  setEmployees(data);
-} else if (Array.isArray(data.employees)) {
-  setEmployees(data.employees);
-} else {
-  console.error("Unexpected response:", data);
-  setEmployees([]);
-}
-
+        if (Array.isArray(data)) {
+          setEmployees(data);
+        } else if (Array.isArray(data.employees)) {
+          setEmployees(data.employees);
+        } else {
+          console.error("Unexpected response:", data);
+          setEmployees([]);
+        }
       } catch (error) {
         console.error("Error fetching employees:", error);
       } finally {
@@ -30,7 +50,7 @@ if (Array.isArray(data)) {
       }
     };
     fetchEmployees();
-  }, []);
+  }, [navigate]);
 
   if (loading) {
     return (
@@ -62,7 +82,6 @@ if (Array.isArray(data)) {
                 Joined: {new Date(emp.createdAt).toLocaleDateString()}
               </p>
 
-              {/* Optional: Remove Button */}
               <button
                 onClick={() => alert(`Remove ${emp.name} (feature coming soon)`)}
                 className="mt-4 w-full py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium text-white transition-all"

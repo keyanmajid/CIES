@@ -19,7 +19,7 @@ const EmployeeSignup = () => {
       const user = JSON.parse(userData);
       if (user.role !== "manager") {
         alert("Only managers can access this page");
-        navigate("/dashboard");
+          navigate("/care"); // FIXED: Changed from "/dashboard" to "/care"
         return;
       }
     }
@@ -38,12 +38,12 @@ const EmployeeSignup = () => {
     };
 
     try {
-      // ✅ FIXED: Use the MANAGER PROTECTED endpoint with authorization
-      const res = await fetch("https://cies-5dc4.onrender.com/api/auth/manager/employees", {
+      // ✅ FIXED: Use the correct endpoint - manager/employees instead of auth/manager/employees
+      const res = await fetch("https://cies-5dc4.onrender.com/api/manager/employees", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` // Manager's token
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify(data),
       });
@@ -76,7 +76,6 @@ const EmployeeSignup = () => {
             backgroundImage: "url('/EMPLOYEESIGn/download1.jpeg')",
           }}
         >
-          {/* Optional decorative elements */}
           <div className="absolute top-0 left-0 w-32 h-32 bg-white bg-opacity-10 rounded-full -translate-x-16 -translate-y-16"></div>
           <div className="absolute bottom-0 right-0 w-40 h-40 bg-white bg-opacity-10 rounded-full translate-x-20 translate-y-20"></div>
           

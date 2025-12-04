@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pymongo
+joblib
+numpy
+pandas
+scikit-learn==1.3.2
+python-dotenv

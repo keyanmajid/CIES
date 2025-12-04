@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
-import CustomerStats from "../models/CustomerStats.js";
-import moment from "moment";
+
 // Verify JWT token and attach user info
 export const verifyUser = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];

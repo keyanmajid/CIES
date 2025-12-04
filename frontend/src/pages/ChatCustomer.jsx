@@ -3,39 +3,20 @@ import { Link } from "react-router-dom";
 import { ShoppingCart, ChevronLeft, ChevronRight, User } from "lucide-react"; 
 import { io } from "socket.io-client";
 
-// --- MOCK HOOKS AND DATA FOR SINGLE-FILE EXECUTION ---
-
-// Mock useCart hook (replace with actual context in production)
+// Mock hooks and data
 const useCart = () => ({
     addToCart: async (product) => { console.log("Added to cart:", product.name); return { success: true }; },
-    cartCount: 2, // Mock count
-    isAuthenticated: true, // Mock auth status
+    cartCount: 2,
+    isAuthenticated: true,
 });
 
-// Mock Products for search functionality
 const mockProducts = [
-    { _id: 'p1', name: "Ergonomic Keyboard", description: "Mechanical, tactile keys.", price: 120.00, imageUrl: "/products/keyboard.jpg" },
-    { _id: 'p2', name: "Wireless Mouse Pro", description: "High precision gaming mouse.", price: 65.50, imageUrl: "/products/mouse.jpg" },
-    { _id: 'p3', name: "4K Monitor 32in", description: "Ultra-wide color gamut.", price: 499.99, imageUrl: "/products/monitor.jpg" },
-    { _id: 'p4', name: "Webcam HD", description: "1080p stream quality.", price: 35.00, imageUrl: "/products/webcam.jpg" },
+    { _id: "1", name: "Product 1", description: "Test product", price: 99.99, imageUrl: "product1.jpg" },
+    { _id: "2", name: "Product 2", description: "Another product", price: 149.99, imageUrl: "product2.jpg" }
 ];
 
-// Helper function for backend images (mocked for this environment)
-const backendImagePath = (filename) => {
-    const productMap = {
-        "/products/keyboard.jpg": "https://placehold.co/100x100/334155/FFFFFF?text=KB",
-        "/products/mouse.jpg": "https://placehold.co/100x100/475569/FFFFFF?text=Mouse",
-        "/products/monitor.jpg": "https://placehold.co/100x100/64748B/FFFFFF?text=Mon",
-        "/products/webcam.jpg": "https://placehold.co/100x100/94A3B8/FFFFFF?text=Cam",
-    };
-    return productMap[filename] || "https://placehold.co/100x100/0F172A/FFFFFF?text=Item";
-};
-
-const formatPrice = (price) => {
-    return typeof price === "number" ? `$${price.toFixed(2)}` : `$${parseFloat(price).toFixed(2)}`;
-};
-
-// --- CHAT AND NAVBAR COMPONENT ---
+const backendImagePath = (path) => `https://cies-5dc4.onrender.com/uploads/${path}`;
+const formatPrice = (price) => `$${price?.toFixed(2) || '0.00'}`;
 
 export default function ChatCustomer() {
     const { addToCart, cartCount, isAuthenticated } = useCart();
@@ -55,8 +36,73 @@ export default function ChatCustomer() {
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchLoading, setIsSearchLoading] = useState(false);
 
-    // --- CHAT LOGIC ---
+    // --- FIXED: Get user name properly ---
+    useEffect(() => {
+  const getUserName = () => {
+    try {
+      console.log("🔄 Checking for user data...");
+      
+      // Method 1: Check localStorage user data first
+      const userData = localStorage.getItem("user");
+      console.log("📦 Raw userData from localStorage:", userData);
+      
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          console.log("🔍 Parsed user object:", user);
+          
+          if (user && user.name) {
+            const name = user.name;
+            setUserName(name);
+            console.log("✅ Set userName from user.name:", name);
+            
+            // Also store it for the chat
+            localStorage.setItem("userName", name);
+            return;
+          }
+          
+          if (user && user.email) {
+            const nameFromEmail = user.email.split('@')[0];
+            setUserName(nameFromEmail);
+            console.log("✅ Set userName from user.email:", nameFromEmail);
+            
+            localStorage.setItem("userName", nameFromEmail);
+            return;
+          }
+          
+          if (user && user.username) {
+            setUserName(user.username);
+            console.log("✅ Set userName from user.username:", user.username);
+            
+            localStorage.setItem("userName", user.username);
+            return;
+          }
+          
+        } catch (parseError) {
+          console.log("❌ Error parsing user data:", parseError);
+        }
+      }
 
+      // Method 2: Check for existing userName in localStorage
+      const storedUserName = localStorage.getItem("userName");
+      if (storedUserName && storedUserName !== "Guest") {
+        setUserName(storedUserName);
+        console.log("✅ Set userName from localStorage userName:", storedUserName);
+        return;
+      }
+
+      // Final fallback
+      console.log("❌ No user data found, using Guest");
+      setUserName("Guest");
+      
+    } catch (error) {
+      console.error("❌ Error in getUserName:", error);
+      setUserName("Guest");
+    }
+  };
+
+  getUserName();
+}, [isAuthenticated]);
     // Scroll to bottom of chat whenever messages update
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -82,18 +128,9 @@ export default function ChatCustomer() {
             setStatus("Connected to an employee");
         });
 
-        // ✅ NEW: Handle interaction ended event
-        socket.on("interactionEnded", ({ message }) => {
-            setStatus(message || "Chat session ended");
+        socket.on("interactionCompleted", () => {
+            setStatus("Chat completed - Employee redirected to dashboard");
             setEmployeeId(null);
-            setChat(prev => [...prev, { sender: "System", text: "Chat session completed" }]);
-        });
-
-        // ✅ NEW: Handle employee disconnected
-        socket.on("employeeDisconnected", ({ message }) => {
-            setStatus(message || "Employee disconnected");
-            setEmployeeId(null);
-            setChat(prev => [...prev, { sender: "System", text: "Employee disconnected. Please start a new chat." }]);
         });
 
         const receiveHandler = ({ sender, text }) =>
@@ -102,23 +139,61 @@ export default function ChatCustomer() {
 
         return () => {
             socket.off("receiveMessage", receiveHandler);
-            socket.off("interactionEnded");
-            socket.off("employeeDisconnected");
             socket.disconnect();
             socketRef.current = null;
         };
     }, [customerId]);
 
-    const startChat = () => {
-        const s = socketRef.current;
-        if (!s || !s.connected) {
-            setStatus("Not connected to server");
-            return;
-        }
-        s.emit("startInteraction", { customerId, type: "chat" });
-        setStatus("Looking for an available employee...");
-    };
+    // --- IMPROVED: Better customer name logic ---
+const startChat = () => {
+  const s = socketRef.current;
+  if (!s || !s.connected) {
+    setStatus("Not connected to server");
+    return;
+  }
 
+  console.log("🔍 DEBUG startChat - Current userName state:", userName);
+
+  // Get customer name - prioritize actual user data
+  let customerName = "Guest";
+  
+  // Method 1: Use the userName state (which should be "ariz majid")
+  if (userName && userName !== "Guest") {
+    customerName = userName;
+    console.log("✅ Using userName state:", customerName);
+  } 
+  // Method 2: Fallback to localStorage user data
+  else {
+    try {
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        const user = JSON.parse(userData);
+        if (user && user.name) {
+          customerName = user.name;
+          console.log("✅ Using user.name from localStorage:", customerName);
+        }
+      }
+    } catch (e) {
+      console.log("❌ Error getting user data from localStorage");
+    }
+  }
+
+  // Method 3: Final fallback - but this should rarely happen now
+  if (customerName === "Guest") {
+    customerName = `Customer ${customerId.substring(5, 10)}`;
+    console.log("🔄 Created customer name from ID:", customerName);
+  }
+
+  console.log("🚀 FINAL customerName for socket:", customerName);
+  
+  s.emit("startInteraction", { 
+    customerId, 
+    customerName, // This should be "ariz majid"
+    type: "chat" 
+  });
+
+  setStatus("Looking for an available employee...");
+};
     const sendMessage = () => {
         if (!message.trim() || !employeeId) return;
         const s = socketRef.current;
@@ -133,51 +208,39 @@ export default function ChatCustomer() {
         setMessage("");
     };
 
-    // ✅ FIXED: Complete Interaction using Socket Event
     const completeInteraction = async () => {
         try {
-            const s = socketRef.current;
-            if (s && employeeId) {
-                // Use the new socket event to properly free the employee
-                s.emit("customerCompleteChat", { customerId });
-                setStatus("Chat completed ✅");
+            const response = await fetch(`https://cies-5dc4.onrender.com/api/interaction/complete/${customerId}`, {
+                method: "POST",
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                setStatus("Interaction completed ✅ - Employee redirected to dashboard");
+                
+                if (socketRef.current && employeeId) {
+                    socketRef.current.emit("completeInteraction", {
+                        customerId,
+                        employeeId
+                    });
+                }
+                
                 setEmployeeId(null);
-                setChat(prev => [...prev, { sender: "System", text: "You ended the chat session" }]);
+                setChat([]);
             } else {
-                // Fallback to API call if socket not available
-                await fetch(`https://cies-5dc4.onrender.com/api/interaction/complete/${customerId}`, {
-                    method: "POST"
-                });
-                setStatus("Interaction completed ✅");
-                setEmployeeId(null);
-                setChat(prev => [...prev, { sender: "System", text: "Chat session completed" }]);
+                setStatus("Error completing interaction ❌");
             }
         } catch (err) {
-            console.error(err);
+            console.error("Completion error:", err);
             setStatus("Error completing interaction ❌");
         }
     };
 
-    // --- NAVBAR LOGIC ---
-
-    // Get user name from token/localStorage (Mocked for this file)
-    useEffect(() => {
-        const getUserName = () => {
-            try {
-                const token = localStorage.getItem("token");
-                if (token) {
-                    const payload = JSON.parse(atob(token.split('.')[1])); 
-                    if (payload.name) setUserName(payload.name.split(' ')[0]);
-                    else if (payload.email) setUserName(payload.email.split('@')[0]);
-                } else setUserName("Guest");
-            } catch (error) {
-                setUserName("Guest");
-            }
-        };
-        getUserName();
-    }, [isAuthenticated]);
-
-    // Search function (Mocked to use local data)
+    // Search function and other existing code remains the same...
     const handleSearch = () => {
         const trimmedQuery = searchQuery.trim().toLowerCase();
         
@@ -199,7 +262,6 @@ export default function ChatCustomer() {
         setIsSearchLoading(false);
     };
 
-    // Debounce search
     useEffect(() => {
         if (searchQuery.trim() === "") {
             setIsSearching(false);
@@ -221,6 +283,8 @@ export default function ChatCustomer() {
         else console.error(result?.error || "Failed to add item to cart.");
     };
 
+ 
+
     // Mock data for the context card
     const quickLinks = [
         { label: "FAQ Center", icon: "❓" },
@@ -231,7 +295,7 @@ export default function ChatCustomer() {
     return (
         <div className="min-h-screen w-full bg-cies-900 text-white font-sans">
             
-            {/* NAVBAR */}
+            {/* NAVBAR (Copied from Home.jsx) */}
             <nav className="flex items-center justify-between p-4 bg-cies-900 shadow-md sticky top-0 z-50">
                 <div className="flex items-center space-x-4">
                     {/* Burger Button */}
@@ -351,12 +415,15 @@ export default function ChatCustomer() {
             )}
             
             {/* MAIN CHAT CONTENT AREA */}
-            <div className="p-4 sm:p-8 bg-[linear-gradient(to_bottom_right,#0f0e1f,#05050a)] h-[calc(100vh-64px)] overflow-y-auto">
-                {/* MAIN CHAT GRID */}
+            <div className="p-4 sm:p-8 
+                          bg-[linear-gradient(to_bottom_right,#0f0e1f,#05050a)] h-[calc(100vh-64px)] overflow-y-auto">
+
+                {/* MAIN CHAT GRID (Responsive Grid/Flex) */}
                 <div className="flex flex-col lg:grid lg:grid-cols-[280px_1fr] gap-4 lg:gap-6 h-full"> 
                     
-                    {/* LEFT SIDEBAR */}
-                    <div className="hidden lg:block backdrop-blur-xl bg-white/5 p-4 sm:p-5 rounded-3xl shadow-2xl shadow-black/70 border border-white/20 overflow-y-auto"> 
+                    {/* LEFT SIDEBAR: ACCOUNT CONTEXT & QUICK LINKS */}
+                    <div className="hidden lg:block backdrop-blur-xl bg-white/5 p-4 sm:p-5 rounded-3xl 
+                                    shadow-2xl shadow-black/70 border border-white/20 overflow-y-auto"> 
                         <h2 className="text-lg sm:text-xl font-bold mb-4 text-white border-b border-white/10 pb-2">
                             Account Context
                         </h2>
@@ -367,8 +434,8 @@ export default function ChatCustomer() {
                             <p className="font-mono text-xs sm:text-sm break-all mb-3">{customerId}</p>
                             
                             <p className="text-xs text-white/50 mb-1">Status:</p>
-                            <p className={`font-semibold text-sm ${employeeId ? 'text-green-400' : 'text-yellow-400'}`}>
-                                {employeeId ? 'Chat Active' : 'Waiting in Queue'}
+                            <p className={`font-semibold text-sm ${employeeId ? 'text-green-400' : status.includes('completed') ? 'text-blue-400' : 'text-yellow-400'}`}>
+                                {employeeId ? 'Chat Active' : status.includes('completed') ? 'Chat Completed' : 'Waiting in Queue'}
                             </p>
                         </div>
 
@@ -386,14 +453,20 @@ export default function ChatCustomer() {
                     {/* RIGHT CHAT PANEL CONTAINER */}
                     <div className="flex flex-col h-full w-full lg:col-span-1 min-h-[300px] lg:min-h-0">
                         
-                        {/* CHAT DISPLAY AREA + INPUT */}
-                        <div className="backdrop-blur-xl bg-white/5 rounded-3xl flex-1 shadow-2xl shadow-black/70 border border-white/20 flex flex-col">
+                        {/* A. CHAT DISPLAY AREA + INPUT (Single Glass Panel) */}
+                        <div className="backdrop-blur-xl bg-white/5 rounded-3xl flex-1 
+                                        shadow-2xl shadow-black/70 border border-white/20 flex flex-col">
                             
-                            {/* Chat Messages Area */}
+                            {/* Chat Messages Area (Scrollable) */}
                             <div className="p-4 flex-1 overflow-y-auto">
-                                {chat.length === 0 && !employeeId && (
+                                {chat.length === 0 && !employeeId && !status.includes('completed') && (
                                     <p className="text-center text-white/50 italic pt-12">
                                         Click "Start Chat" to connect with an available employee.
+                                    </p>
+                                )}
+                                {status.includes('completed') && (
+                                    <p className="text-center text-green-400 font-semibold pt-12">
+                                        ✅ Chat completed successfully! The employee has been redirected to their dashboard.
                                     </p>
                                 )}
                                 {chat.map((msg, i) => (
@@ -401,34 +474,33 @@ export default function ChatCustomer() {
                                         <div className={`max-w-[85%] text-sm p-3 rounded-2xl 
                                             ${msg.sender === "You"
                                                 ? "bg-blue-600/80 text-white rounded-br-md"
-                                                : msg.sender === "System"
-                                                ? "bg-purple-600/60 text-white rounded-xl text-center"
                                                 : "bg-white/10 text-gray-200 rounded-tl-md border border-white/10" 
                                             }`}>
-                                            {msg.sender !== "You" && msg.sender !== "System" && <span className="font-semibold text-xs text-blue-300 block mb-1">Employee</span>}
+                                            {msg.sender !== "You" && <span className="font-semibold text-xs text-blue-300 block mb-1">Employee</span>}
                                             {msg.text}
                                         </div>
                                     </div>
                                 ))}
-                                <div ref={chatEndRef} />
+                                <div ref={chatEndRef} /> {/* Scroll anchor */}
                             </div>
 
-                            {/* Input Area */}
+                            {/* Input Area (Fixed to bottom of glass panel) */}
                             <div className="p-4 border-t border-white/10">
                                 <div className="flex space-x-3">
                                     <input
-                                        className="flex-1 p-3 sm:p-4 bg-white/10 rounded-2xl border border-white/20 text-gray-100 placeholder-white/50 focus:ring-2 focus:ring-blue-500 transition-shadow outline-none backdrop-blur-md text-sm sm:text-base"
+                                        className="flex-1 p-3 sm:p-4 bg-white/10 rounded-2xl border border-white/20 text-gray-100 
+                                                    placeholder-white/50 focus:ring-2 focus:ring-blue-500 transition-shadow outline-none backdrop-blur-md text-sm sm:text-base"
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
                                         onKeyPress={(e) => { if (e.key === 'Enter') sendMessage(); }}
-                                        placeholder={employeeId ? "Type a message..." : "Connect to send..."}
-                                        disabled={!employeeId}
+                                        placeholder={employeeId ? "Type a message..." : status.includes('completed') ? "Chat completed" : "Connect to send..."}
+                                        disabled={!employeeId || status.includes('completed')}
                                     />
                                     <button
                                         onClick={sendMessage}
                                         className={`px-4 sm:px-5 rounded-2xl text-lg font-semibold transition-all flex items-center justify-center 
-                                                    ${employeeId ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 cursor-not-allowed'}`}
-                                        disabled={!employeeId}
+                                                    ${employeeId && !status.includes('completed') ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 cursor-not-allowed'}`}
+                                        disabled={!employeeId || status.includes('completed')}
                                     >
                                         <span role="img" aria-label="Send">➡️</span>
                                     </button>
@@ -436,28 +508,31 @@ export default function ChatCustomer() {
                             </div>
                         </div>
 
-                        {/* Status & Controls */}
+                        {/* B. Status & Controls (Buttons below glass panel) */}
                         <div className="mt-4">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-3 sm:space-y-0">
-                                <p className="text-sm font-medium px-3 py-1 rounded-full bg-blue-700/50 text-blue-300 w-fit">
+                                <p className={`text-sm font-medium px-3 py-1 rounded-full w-fit ${
+                                    status.includes('completed') ? 'bg-green-700/50 text-green-300' :
+                                    employeeId ? 'bg-green-700/50 text-green-300' : 'bg-blue-700/50 text-blue-300'
+                                }`}>
                                     {status}
                                 </p>
                                 <div className="flex space-x-3">
                                     <button 
                                         onClick={startChat} 
                                         className={`px-5 py-2 rounded-xl text-sm sm:text-base font-semibold transition-colors 
-                                            ${employeeId ? 'bg-gray-700 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-500'}`}
-                                        disabled={!!employeeId}
+                                            ${employeeId || status.includes('completed') ? 'bg-gray-700 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-500'}`}
+                                        disabled={!!employeeId || status.includes('completed')}
                                     >
                                         Start Chat
                                     </button>
                                     <button 
                                         onClick={completeInteraction} 
                                         className={`px-5 py-2 rounded-xl text-sm sm:text-base font-semibold transition-colors 
-                                            ${employeeId ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-700 cursor-not-allowed'}`}
-                                        disabled={!employeeId}
+                                            ${employeeId && !status.includes('completed') ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-700 cursor-not-allowed'}`}
+                                        disabled={!employeeId || status.includes('completed')}
                                     >
-                                        Complete Chat
+                                        Complete
                                     </button>
                                 </div>
                             </div>
