@@ -1,8 +1,8 @@
 import express from 'express';
 import Cart from '../models/Cart.js';
-import ProfitLog from '../models/ProfitLog.js'; // ADD THIS
+import ProfitLog from '../models/ProfitLog.js';
 import { verifyUser } from '../middlewares/auth.js';
-import moment from 'moment'; // ADD THIS
+import moment from 'moment';
 
 const router = express.Router();
 
@@ -200,10 +200,12 @@ router.delete('/clear', verifyUser, async (req, res) => {
   }
 });
 
-// ✅ NEW: Checkout route
+// ✅ FIXED: Checkout route with proper error handling
 router.post("/checkout", verifyUser, async (req, res) => {
   try {
-    const { totalAmount } = req.body;
+    const { totalAmount, orderId } = req.body;
+
+    console.log("Checkout request received. Order ID:", orderId, "Total:", totalAmount);
 
     if (!totalAmount || totalAmount <= 0) {
       return res.status(400).json({ 
@@ -212,29 +214,57 @@ router.post("/checkout", verifyUser, async (req, res) => {
       });
     }
 
-    // Track profit
-  const today = moment().startOf('day').toDate();
-
-await ProfitLog.findOneAndUpdate(
-  { date: today },
-  { $inc: { totalSales: totalAmount } },
-  { upsert: true, new: true, setDefaultsOnInsert: true }
-);
+    // Track profit with safe handling
+    const today = moment().startOf('day').toDate();
+    
+    console.log("Updating profit log for date:", today);
+    
+    // First approach: Try to find existing document and handle null values
+    let profitLog = await ProfitLog.findOne({ date: today });
+    
+    if (profitLog) {
+      console.log("Found existing profit log:", profitLog);
+      
+      // Check if totalSales is null or not a number
+      if (profitLog.totalSales === null || profitLog.totalSales === undefined || 
+          typeof profitLog.totalSales !== 'number') {
+        console.log("Fixing null totalSales. Current value:", profitLog.totalSales);
+        profitLog.totalSales = 0;
+      }
+      
+      // Now safely increment
+      profitLog.totalSales += totalAmount;
+      await profitLog.save();
+      console.log("Profit log updated successfully:", profitLog);
+    } else {
+      console.log("No existing profit log found. Creating new one.");
+      profitLog = new ProfitLog({
+        date: today,
+        totalSales: totalAmount
+      });
+      await profitLog.save();
+      console.log("New profit log created:", profitLog);
+    }
 
     // Clear cart after successful checkout
+    console.log("Clearing cart for user:", req.user.id);
     const cart = await getOrCreateCart(req.user.id);
     cart.items = [];
     await cart.save();
+    
+    console.log("Checkout completed successfully for order:", orderId);
 
     res.json({ 
       success: true, 
       message: "Order placed successfully!" 
     });
   } catch (error) {
-    console.error("Checkout error:", error);
+    console.error("Checkout error details:", error);
+    console.error("Error stack:", error.stack);
     res.status(500).json({ 
       success: false, 
-      message: "Checkout failed" 
+      message: "Checkout failed",
+      error: error.message 
     });
   }
 });
