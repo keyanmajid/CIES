@@ -213,12 +213,13 @@ router.post("/checkout", verifyUser, async (req, res) => {
     }
 
     // Track profit
-    const today = moment().format("YYYY-MM-DD");
-    await ProfitLog.findOneAndUpdate(
-      { date: today },
-      { $inc: { totalSales: totalAmount } },
-      { upsert: true }
-    );
+  const today = moment().startOf('day').toDate();
+
+await ProfitLog.findOneAndUpdate(
+  { date: today },
+  { $inc: { totalSales: totalAmount } },
+  { upsert: true, new: true, setDefaultsOnInsert: true }
+);
 
     // Clear cart after successful checkout
     const cart = await getOrCreateCart(req.user.id);
