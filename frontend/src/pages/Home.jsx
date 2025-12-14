@@ -54,7 +54,7 @@ export default function Home() {
         const fetchProducts = async () => {
             try {
                 setIsLoading(true);
-                const res = await fetch(`http://localhost:5000/api/products?limit=20`);
+                const res = await fetch(`https://cies-5dc4.onrender.com/api/products?limit=20`);
                 const data = await res.json();
                 
                 const productsData = Array.isArray(data) ? data : (data.products || data.results || []);
@@ -76,7 +76,7 @@ export default function Home() {
                 const token = localStorage.getItem("token");
                 if (!token) return;
 
-                const response = await fetch('http://localhost:5000/api/analytics/purchase-frequency', {
+                const response = await fetch('https://cies-5dc4.onrender.com/api/analytics/purchase-frequency', {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
@@ -159,7 +159,7 @@ export default function Home() {
             }
 
             const res = await fetch(
-                `http://localhost:5000/api/products/search?query=${encodeURIComponent(query)}&limit=8`,
+                `https://cies-5dc4.onrender.com/api/products/search?query=${encodeURIComponent(query)}&limit=8`,
                 { headers }
             );
             
