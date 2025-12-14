@@ -37,7 +37,7 @@ export default function Home() {
             return '/placeholder.jpg';
         }
         const cleanFilename = filename.startsWith('/') ? filename.substring(1) : filename;
-        return `http://localhost:5000/public/${cleanFilename}`;
+        return `https://cies-5dc4.onrender.com/public/${cleanFilename}`;
     }, []);
 
     const slides = useMemo(() => [
