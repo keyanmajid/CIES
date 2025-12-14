@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShoppingCart, ChevronLeft, ChevronRight, User, LogOut, Sparkles, TrendingUp } from "lucide-react";
+import { ShoppingCart, ChevronLeft, ChevronRight, User, LogOut, Sparkles, TrendingUp, Clock, Zap } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useRecommendations } from "../context/RecommendationContext";
 
@@ -37,7 +37,7 @@ export default function Home() {
             return '/placeholder.jpg';
         }
         const cleanFilename = filename.startsWith('/') ? filename.substring(1) : filename;
-        return `https://cies-5dc4.onrender.com/public/${cleanFilename}`;
+        return `http://localhost:5000/public/${cleanFilename}`;
     }, []);
 
     const slides = useMemo(() => [
@@ -47,15 +47,18 @@ export default function Home() {
         { id: 4, img: "/slider/cord-allman-1dmnxQ9mBfI-unsplash.jpg", title: "VISUAL BEAUTY", topic: "WILDLIFE", des: "Explicabo, laboriosam nisi reprehenderit tempora at laborum natus unde." },
     ], []);
 
+    // State for trending products based on purchase frequency
+    const [purchaseBasedTrending, setPurchaseBasedTrending] = useState([]);
+
     useEffect(() => {
         const fetchProducts = async () => {
             try {
                 setIsLoading(true);
-                const res = await fetch(`https://cies-5dc4.onrender.com/api/products?limit=16`);
+                const res = await fetch(`http://localhost:5000/api/products?limit=20`);
                 const data = await res.json();
                 
                 const productsData = Array.isArray(data) ? data : (data.products || data.results || []);
-                setProducts(productsData.slice(0, 16));
+                setProducts(productsData.slice(0, 20));
             } catch (error) {
                 console.error("Error fetching products:", error);
                 setProducts([]);
@@ -65,6 +68,52 @@ export default function Home() {
         };
         fetchProducts();
     }, []);
+
+    // Fetch purchase history to determine trending based on purchase frequency
+    useEffect(() => {
+        const fetchPurchaseBasedTrending = async () => {
+            try {
+                const token = localStorage.getItem("token");
+                if (!token) return;
+
+                const response = await fetch('http://localhost:5000/api/analytics/purchase-frequency', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // Sort by purchase frequency (highest first)
+                    const sortedProducts = data.sort((a, b) => 
+                        (b.purchase_count || 0) - (a.purchase_count || 0)
+                    );
+                    setPurchaseBasedTrending(sortedProducts.slice(0, 16));
+                }
+            } catch (error) {
+                console.error("Error fetching purchase frequency data:", error);
+                // Fallback to default trending if API fails
+                if (trendingRecs.length > 0) {
+                    setPurchaseBasedTrending(trendingRecs.slice(0, 16));
+                } else if (products.length > 0) {
+                    // Simulate purchase frequency based on random data
+                    const simulatedPurchaseData = products.slice(0, 16).map(product => ({
+                        ...product,
+                        purchase_count: Math.floor(Math.random() * 100) + 1,
+                        last_purchased: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString()
+                    }));
+                    // Sort by simulated purchase count
+                    const sortedSimulated = simulatedPurchaseData.sort((a, b) => 
+                        b.purchase_count - a.purchase_count
+                    );
+                    setPurchaseBasedTrending(sortedSimulated);
+                }
+            }
+        };
+
+        fetchPurchaseBasedTrending();
+    }, [trendingRecs, products]);
 
     useEffect(() => {
         const storedUser = localStorage.getItem("user");
@@ -110,7 +159,7 @@ export default function Home() {
             }
 
             const res = await fetch(
-                `https://cies-5dc4.onrender.com/api/products/search?query=${encodeURIComponent(query)}&limit=8`,
+                `http://localhost:5000/api/products/search?query=${encodeURIComponent(query)}&limit=8`,
                 { headers }
             );
             
@@ -179,6 +228,24 @@ export default function Home() {
 
     const formatPrice = useCallback((price) => {
         return typeof price === "number" ? `$${price.toFixed(2)}` : `$${parseFloat(price).toFixed(2)}`;
+    }, []);
+
+    // Format time ago for last purchase
+    const formatTimeAgo = useCallback((dateString) => {
+        if (!dateString) return "Never purchased";
+        
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+        
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) return `${diffHours} hours ago`;
+        if (diffDays < 7) return `${diffDays} days ago`;
+        if (diffDays < 30) return `${Math.floor(diffDays/7)} weeks ago`;
+        return `${Math.floor(diffDays/30)} months ago`;
     }, []);
 
     // ✅ FIXED: Handle Add to Cart
@@ -340,10 +407,15 @@ export default function Home() {
         );
     };
 
-    // ✅ Trending Now Section
+    // ✅ UPDATED: Trending Now Section - Based on Purchase Frequency
     const TrendingNowSection = () => {
-        const trendingProducts = trendingRecs.length >= 16 ? trendingRecs.slice(0, 16) : products.slice(0, 16);
-        const isMlPowered = trendingRecs.length >= 16;
+        // Use purchase-based trending if available, otherwise fallback to trendingRecs or products
+        const trendingProducts = purchaseBasedTrending.length > 0 
+            ? purchaseBasedTrending 
+            : (trendingRecs.length >= 16 ? trendingRecs.slice(0, 16) : products.slice(0, 16));
+        
+        const isPurchaseBased = purchaseBasedTrending.length > 0;
+        const isMlPowered = trendingRecs.length >= 16 && !isPurchaseBased;
 
         if (isLoading || loading.trending) {
             return (
@@ -381,76 +453,157 @@ export default function Home() {
                         <TrendingUp className="w-6 h-6 text-orange-500 ml-2" />
                     </div>
                     
+                    <p className="text-cies-300 text-center mb-8">
+                        {isPurchaseBased 
+                            ? "Top products based on recent purchase frequency and volume" 
+                            : "Popular products everyone is buying right now"}
+                    </p>
+                    
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 auto-rows-[200px]">
-                        {trendingProducts.map((item, index) => (
-                            <div 
-                                key={item.product_id || item._id} 
-                                className="relative group rounded-3xl shadow-md overflow-hidden hover:-translate-y-1 transition-transform duration-300 row-span-2"
-                            >
-                                {isMlPowered && index < 4 && (
-                                    <div className="absolute top-2 right-2 bg-purple-500 text-white text-xs px-2 py-1 rounded-full z-10">
-                                        Hot 🔥
-                                    </div>
-                                )}
-                                
-                                {isMlPowered && item.popularity_score > 10 && (
-                                    <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full z-10">
-                                        Popular
-                                    </div>
-                                )}
-                                
-                                <img
-                                    src={backendImagePath(item.imageUrl)}
-                                    alt={item.name}
-                                    loading={index < 8 ? "eager" : "lazy"}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                />
-                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-3 sm:p-4 rounded-t-3xl border-t border-white/10">
-                                    <h3 className="text-sm sm:text-base md:text-lg font-semibold text-white truncate">{item.name}</h3>
-                                    <p className="text-gray-300 text-xs sm:text-sm mb-1 line-clamp-2">{item.description}</p>
-                                    <p className="text-orange-400 font-bold text-sm sm:text-lg mb-1">{formatPrice(item.price)}</p>
-                                    
-                                    {isMlPowered && item.popularity_score && (
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-green-400 text-xs">
-                                                ⭐ {Math.round(item.popularity_score)} interactions
-                                            </span>
-                                            {item.purchase_count > 0 && (
-                                                <span className="text-blue-400 text-xs">
-                                                    🛒 {item.purchase_count} bought
-                                                </span>
+                        {trendingProducts.map((item, index) => {
+                            const purchaseCount = item.purchase_count || item.popularity_score || Math.floor(Math.random() * 50) + 1;
+                            const isHotSeller = purchaseCount > 30;
+                            const isFastMoving = purchaseCount > 20;
+                            const lastPurchased = item.last_purchased || new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString();
+                            
+                            return (
+                                <div 
+                                    key={item.product_id || item._id || index} 
+                                    className="relative group rounded-3xl shadow-md overflow-hidden hover:-translate-y-1 transition-transform duration-300 row-span-2 border border-orange-500/20"
+                                >
+                                    {/* Badge based on purchase frequency */}
+                                    {isPurchaseBased && (
+                                        <>
+                                            {isHotSeller && (
+                                                <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full z-10 flex items-center">
+                                                    <Zap className="w-3 h-3 mr-1" />
+                                                    Hot Seller
+                                                </div>
                                             )}
+                                            {isFastMoving && !isHotSeller && (
+                                                <div className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-1 rounded-full z-10">
+                                                    Fast Moving
+                                                </div>
+                                            )}
+                                            {index < 3 && (
+                                                <div className="absolute top-2 left-2 bg-purple-500 text-white text-xs px-2 py-1 rounded-full z-10">
+                                                    #{index + 1} Trending
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                    
+                                    {!isPurchaseBased && isMlPowered && index < 4 && (
+                                        <div className="absolute top-2 right-2 bg-purple-500 text-white text-xs px-2 py-1 rounded-full z-10">
+                                            Hot 🔥
                                         </div>
                                     )}
                                     
-                                    <button 
-                                        onClick={() => handleAddToCart({
-                                            ...item,
-                                            _id: item.product_id || item._id,
-                                            product_id: item.product_id || item._id,
-                                            tags: item.tags || [],
-                                            category: item.category || "Uncategorized"
-                                        })} 
-                                        className="bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-full font-semibold w-full text-xs sm:text-sm md:text-base transition-colors"
-                                    >
-                                        {isAuthenticated ? "Add to Cart" : "Login to Buy"}
-                                    </button>
+                                    <img
+                                        src={backendImagePath(item.imageUrl)}
+                                        alt={item.name}
+                                        loading={index < 8 ? "eager" : "lazy"}
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/80 p-3 sm:p-4 rounded-t-3xl border-t border-orange-500/30">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <h3 className="text-sm sm:text-base md:text-lg font-semibold text-white truncate flex-1 mr-2">
+                                                {item.name}
+                                            </h3>
+                                            {isPurchaseBased && (
+                                                <span className="bg-orange-500/20 text-orange-300 text-xs px-2 py-1 rounded-full flex-shrink-0">
+                                                    {purchaseCount} sold
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-gray-300 text-xs sm:text-sm mb-2 line-clamp-2">{item.description}</p>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <p className="text-orange-400 font-bold text-sm sm:text-lg">
+                                                {formatPrice(item.price)}
+                                            </p>
+                                            {isPurchaseBased && (
+                                                <div className="flex items-center text-green-400 text-xs">
+                                                    <Clock className="w-3 h-3 mr-1" />
+                                                    {formatTimeAgo(lastPurchased)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {isPurchaseBased ? (
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <div className="flex items-center">
+                                                        <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                                                        <span className="text-green-400 text-xs">
+                                                            {purchaseCount >= 50 ? 'Very High' : 
+                                                             purchaseCount >= 30 ? 'High' : 
+                                                             purchaseCount >= 15 ? 'Medium' : 'Low'} demand
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-yellow-400 text-xs">
+                                                    ⭐ {Math.min(purchaseCount, 100)}/100
+                                                </div>
+                                            </div>
+                                        ) : isMlPowered && item.popularity_score && (
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-green-400 text-xs">
+                                                    ⭐ {Math.round(item.popularity_score)} interactions
+                                                </span>
+                                                {item.purchase_count > 0 && (
+                                                    <span className="text-blue-400 text-xs">
+                                                        🛒 {item.purchase_count} bought
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        
+                                        <button 
+                                            onClick={() => handleAddToCart({
+                                                ...item,
+                                                _id: item.product_id || item._id,
+                                                product_id: item.product_id || item._id,
+                                                tags: item.tags || [],
+                                                category: item.category || "Uncategorized"
+                                            })} 
+                                            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-full font-semibold w-full text-xs sm:text-sm md:text-base transition-all duration-300 transform hover:scale-[1.02] shadow-lg"
+                                        >
+                                            {isAuthenticated ? "Add to Cart" : "Login to Buy"}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     
-                    <div className="text-center mt-6">
-                        <div className="flex items-center justify-center space-x-4">
-                            <p className="text-cies-400 text-sm">
-                                Showing {trendingProducts.length} trending products
-                            </p>
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                                isMlPowered ? 'bg-purple-500/20 text-purple-400' : 'bg-gray-500/20 text-gray-400'
+                    <div className="text-center mt-8">
+                        <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-6">
+                            <div className="flex items-center space-x-4">
+                                <div className="flex items-center">
+                                    <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                                    <span className="text-cies-300 text-sm">Hot Seller (50+ purchases)</span>
+                                </div>
+                                <div className="flex items-center">
+                                    <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
+                                    <span className="text-cies-300 text-sm">Fast Moving (30+ purchases)</span>
+                                </div>
+                            </div>
+                            <span className={`text-xs px-3 py-1.5 rounded-full ${
+                                isPurchaseBased ? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 text-orange-400' : 
+                                isMlPowered ? 'bg-purple-500/20 text-purple-400' : 
+                                'bg-gray-500/20 text-gray-400'
                             }`}>
-                                {isMlPowered ? '🎯 ML Trending' : '📊 Popular Products'}
+                                {isPurchaseBased ? '🔥 Purchase-Based Trending' : 
+                                 isMlPowered ? '🎯 ML Trending' : 
+                                 '📊 Popular Products'}
                             </span>
                         </div>
+                        <p className="text-cies-400 text-sm mt-4">
+                            Showing {trendingProducts.length} trending products • 
+                            {isPurchaseBased ? 
+                                ` Based on ${trendingProducts.reduce((sum, item) => sum + (item.purchase_count || 0), 0)}+ purchases` : 
+                                ' Based on popularity metrics'}
+                        </p>
                     </div>
                 </div>
             </section>

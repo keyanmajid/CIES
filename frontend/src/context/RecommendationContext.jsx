@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 
 const RecommendationContext = createContext();
 
-const API_BASE_URL = "https://cies-5dc4.onrender.com";
+const API_BASE_URL = "https://keyanmajid-recomendationml.hf.space";
 
 export const RecommendationProvider = ({ children }) => {
   const [personalizedRecs, setPersonalizedRecs] = useState([]);
@@ -17,25 +17,52 @@ export const RecommendationProvider = ({ children }) => {
 
   // Get authentication token
   const getToken = () => localStorage.getItem("token");
+  
+  // Get user info from localStorage
+  const getUserInfo = () => {
+    try {
+      const user = localStorage.getItem("user");
+      return user ? JSON.parse(user) : null;
+    } catch (error) {
+      console.error("Error parsing user info:", error);
+      return null;
+    }
+  };
 
   // Fetch personalized recommendations
   const fetchPersonalizedRecommendations = useCallback(async (limit = 8) => {
     const token = getToken();
-    if (!token) {
-      console.log("No token available for personalized recommendations");
+    const userInfo = getUserInfo();
+    
+    if (!token || !userInfo) {
+      console.log("No token or user info available for personalized recommendations");
+      setPersonalizedRecs([]);
+      return;
+    }
+
+    const userId = userInfo._id || userInfo.id;
+    if (!userId) {
+      console.log("No user ID found for personalized recommendations");
+      setPersonalizedRecs([]);
       return;
     }
 
     setLoading(prev => ({ ...prev, personalized: true }));
     
     try {
+      console.log(`[RECOMMENDATIONS] Fetching personalized for user: ${userId}`);
+      
       const response = await fetch(
-        `${API_BASE_URL}/api/recommendations/personalized?limit=${limit}`,
+        `${API_BASE_URL}/recommend/personalized`,
         {
+          method: "POST",
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          }
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            top_n: limit
+          })
         }
       );
 
@@ -51,6 +78,8 @@ export const RecommendationProvider = ({ children }) => {
         }
       } else {
         console.error("Failed to fetch personalized recommendations, status:", response.status);
+        const errorText = await response.text();
+        console.error("Error response:", errorText);
         setPersonalizedRecs([]);
       }
     } catch (error) {
@@ -63,36 +92,81 @@ export const RecommendationProvider = ({ children }) => {
 
   // Fetch "For You" recommendations
   const fetchForYouRecommendations = useCallback(async (limit = 8) => {
+    const token = getToken();
+    const userInfo = getUserInfo();
+    
     setLoading(prev => ({ ...prev, forYou: true }));
     
     try {
-      const token = getToken();
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      // If user is authenticated, try to get personalized
+      if (token && userInfo) {
+        const userId = userInfo._id || userInfo.id;
+        console.log(`[RECOMMENDATIONS] Fetching for-you (authenticated) for user: ${userId}`);
+        
+        const response = await fetch(
+          `${API_BASE_URL}/recommend/personalized`,
+          {
+            method: "POST",
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              top_n: limit
+            })
+          }
+        );
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/recommendations/for-you?limit=${limit}`,
-        { headers }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("[RECOMMENDATIONS] For-You response:", data);
-        if (data.success) {
-          console.log(`[Frontend] Loaded ${data.recommendations.length} for-you recommendations`);
-          setForYouRecs(data.recommendations || []);
+        if (response.ok) {
+          const data = await response.json();
+          console.log("[RECOMMENDATIONS] For-You (authenticated) response:", data);
+          if (data.success) {
+            console.log(`[Frontend] Loaded ${data.recommendations.length} for-you recommendations`);
+            setForYouRecs(data.recommendations || []);
+          } else {
+            console.error("[RECOMMENDATIONS] For-You API returned success=false");
+            setForYouRecs([]);
+          }
         } else {
-          console.error("[RECOMMENDATIONS] For-You API returned success=false");
+          console.error("Failed to fetch for-you recommendations");
           setForYouRecs([]);
         }
       } else {
-        console.error("Failed to fetch for-you recommendations");
-        setForYouRecs([]);
+        // For non-authenticated users, use trending
+        console.log("[RECOMMENDATIONS] Fetching for-you (guest) - using trending");
+        
+        try {
+          // Try to get trending from main backend
+          const response = await fetch(`https://cies-5dc4.onrender.com/api/products?limit=${limit}`);
+          if (response.ok) {
+            const data = await response.json();
+            const products = Array.isArray(data) ? data : (data.products || data.results || []);
+            
+            // Convert to recommendation format
+            const formattedRecs = products.slice(0, limit).map(product => ({
+              product_id: product._id,
+              name: product.name,
+              category: product.category,
+              price: product.price,
+              imageUrl: product.imageUrl,
+              tags: product.tags || [],
+              description: product.description || "",
+              score: 1.0,
+              reason: "Popular choice",
+              popularity_score: 1.0,
+              purchase_count: 0,
+              add_to_cart_count: 0,
+              view_count: 0
+            }));
+            
+            setForYouRecs(formattedRecs);
+          } else {
+            setForYouRecs([]);
+          }
+        } catch (error) {
+          console.error("Error fetching trending for for-you:", error);
+          setForYouRecs([]);
+        }
       }
     } catch (error) {
       console.error("Error fetching for-you recommendations:", error);
@@ -107,22 +181,38 @@ export const RecommendationProvider = ({ children }) => {
     setLoading(prev => ({ ...prev, trending: true }));
     
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/recommendations/trending?limit=${limit}`
-      );
-
+      console.log("[RECOMMENDATIONS] Fetching trending recommendations");
+      
+      // Use main backend products API
+      const response = await fetch(`https://cies-5dc4.onrender.com/api/products?limit=${limit}`);
+      
       if (response.ok) {
         const data = await response.json();
-        console.log("[RECOMMENDATIONS] Trending response:", data);
-        if (data.success) {
-          console.log(`[Frontend] Loaded ${data.recommendations.length} trending recommendations`);
-          setTrendingRecs(data.recommendations || []);
-        } else {
-          console.error("[RECOMMENDATIONS] Trending API returned success=false");
-          setTrendingRecs([]);
-        }
+        const products = Array.isArray(data) ? data : (data.products || data.results || []);
+        
+        // Convert to recommendation format
+        const trendingProducts = products.slice(0, limit).map(product => ({
+          product_id: product._id,
+          name: product.name,
+          category: product.category,
+          price: product.price,
+          imageUrl: product.imageUrl,
+          tags: product.tags || [],
+          description: product.description || "",
+          score: 1.0,
+          reason: "Trending now",
+          popularity_score: 1.0,
+          purchase_count: 0,
+          add_to_cart_count: 0,
+          view_count: 0,
+          matching_tags: [],
+          matching_tags_count: 0
+        }));
+        
+        console.log(`[Frontend] Loaded ${trendingProducts.length} trending recommendations`);
+        setTrendingRecs(trendingProducts);
       } else {
-        console.error("Failed to fetch trending recommendations");
+        console.error("Failed to fetch trending products from main backend");
         setTrendingRecs([]);
       }
     } catch (error) {
@@ -136,11 +226,12 @@ export const RecommendationProvider = ({ children }) => {
   // Check ML service status
   const checkMlServiceStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/recommendations/health`);
+      const response = await fetch(`${API_BASE_URL}/health`);
       if (response.ok) {
         const data = await response.json();
         console.log("[RECOMMENDATIONS] Health check:", data);
-        setMlServiceStatus(data.ml_service_healthy ? 'healthy' : 'unhealthy');
+        const isHealthy = data.model_loaded && data.mongodb_connected;
+        setMlServiceStatus(isHealthy ? 'healthy' : 'unhealthy');
       } else {
         console.error("[RECOMMENDATIONS] Health check failed");
         setMlServiceStatus('unhealthy');
@@ -154,10 +245,14 @@ export const RecommendationProvider = ({ children }) => {
   // Refresh all recommendations
   const refreshAllRecommendations = useCallback(() => {
     const token = getToken();
-    console.log("[RECOMMENDATIONS] Refreshing all recommendations, token exists:", !!token);
+    const userInfo = getUserInfo();
+    console.log("[RECOMMENDATIONS] Refreshing all recommendations, token exists:", !!token, "user exists:", !!userInfo);
     
-    if (token) {
+    if (token && userInfo) {
       fetchPersonalizedRecommendations(8); // 8 for slider
+    } else {
+      console.log("[RECOMMENDATIONS] No user logged in, skipping personalized");
+      setPersonalizedRecs([]);
     }
     fetchForYouRecommendations(8); // 8 for slider
     fetchTrendingRecommendations(16); // 16 for grid
@@ -173,6 +268,30 @@ export const RecommendationProvider = ({ children }) => {
     const interval = setInterval(refreshAllRecommendations, 5 * 60 * 1000);
     
     return () => clearInterval(interval);
+  }, [refreshAllRecommendations]);
+
+  // Listen for auth changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      console.log("[RECOMMENDATIONS] Storage changed, refreshing recommendations");
+      refreshAllRecommendations();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for login/logout events
+    const originalSetItem = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      originalSetItem.apply(this, arguments);
+      if (key === 'token' || key === 'user') {
+        setTimeout(handleStorageChange, 100);
+      }
+    };
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      localStorage.setItem = originalSetItem;
+    };
   }, [refreshAllRecommendations]);
 
   return (

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const ML_API_URL = 'https://huggingface.co/spaces/keyanmajid/recomendationml'; // Your FastAPI ML service
+const ML_API_URL = 'https://keyanmajid-recomendationml.hf.space'; // Your FastAPI ML service
 
 class MLService {
   // Get personalized recommendations for user from ML model
