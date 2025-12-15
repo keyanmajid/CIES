@@ -4,7 +4,80 @@ import User from "../models/User.js";
 import { verifyUser, verifyRole } from "../middlewares/auth.js";
 
 const router = express.Router();
+// backend/routes/employeeDashboardRoutes.js - ADD THIS NEW ROUTE
 
+// ✅ ADD THIS ROUTE: Get Employee Toxicity History
+router.get("/toxicity/:employeeId", verifyUser, async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    
+    // Verify the employee is accessing their own data (or manager/admin)
+    if (req.user.role === 'employee' && req.user.id !== employeeId) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+    
+    // Find interactions with toxicity analysis for this employee
+    const interactions = await Interaction.find({
+      employeeId,
+      toxicityAnalyzed: true,
+      "mlToxicityAnalysis.status": "completed"
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    // Format toxicity history
+    const toxicityHistory = interactions.map((interaction) => {
+      const analysis = interaction.mlToxicityAnalysis || {};
+      
+      return {
+        interactionId: interaction._id,
+        customerId: interaction.customerId,
+        customerName: interaction.customerName,
+        date: interaction.createdAt,
+        status: interaction.status,
+        analysis: {
+          toxicMessages: analysis.toxicMessages || 0,
+          toxicityPercentage: analysis.toxicityPercentage || 0,
+          pointsDeducted: analysis.pointsDeducted || 0,
+          overallScore: analysis.overallToxicityScore || 0,
+          analyzedAt: analysis.analyzedAt
+        },
+        messages: interaction.messages.length
+      };
+    });
+    
+    // Calculate summary statistics
+    const summary = {
+      totalAnalyzed: toxicityHistory.length,
+      totalToxicChats: toxicityHistory.filter(item => 
+        (item.analysis?.toxicityPercentage || 0) > 10
+      ).length,
+      totalPointsDeducted: toxicityHistory.reduce((sum, item) => 
+        sum + (item.analysis?.pointsDeducted || 0), 0
+      ),
+      avgToxicityPercentage: toxicityHistory.length > 0 
+        ? toxicityHistory.reduce((sum, item) => 
+            sum + (item.analysis?.toxicityPercentage || 0), 0
+          ) / toxicityHistory.length 
+        : 0
+    };
+    
+    res.json({ 
+      success: true, 
+      toxicityHistory,
+      summary,
+      employeeId
+    });
+    
+  } catch (err) {
+    console.error("Toxicity history error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error", 
+      error: err.message 
+    });
+  }
+});
 // GET EMPLOYEE DASHBOARD OVERVIEW STATS
 router.get("/overview/:employeeId", verifyUser, async (req, res) => {
   try {

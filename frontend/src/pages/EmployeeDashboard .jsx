@@ -1,5 +1,8 @@
+// frontend/src/pages/EmployeeDashboard.jsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { io } from "socket.io-client";
 import { 
   BarChart, 
   Bar, 
@@ -24,13 +27,17 @@ import {
   Activity,
   RefreshCw,
   LogOut,
-  TrendingUp, // Added for ML Card
-  AlertTriangle // Added for ML Card
+  TrendingUp,
+  AlertTriangle,
+  Bell,
+  TrendingDown,
+  ShieldAlert,
+  Info,
+  X
 } from "lucide-react";
 
-// The base URL for the Employee Service (5000) and the Prediction Service (3000/api)
 const EMPLOYEE_API_BASE_URL = "https://cies-5dc4.onrender.com/api";
-const PREDICTION_API_BASE_URL = "http://localhost:3000/api/prediction";
+
 
 const EmployeeDashboard = () => {
   const [employeeData, setEmployeeData] = useState(null);
@@ -42,12 +49,17 @@ const EmployeeDashboard = () => {
   const [timeRange, setTimeRange] = useState('week');
   const [refreshing, setRefreshing] = useState(false);
   const location = useLocation();
-  // State for the company-wide ML status (e.g., customer count/prediction)
-  const [customerMlStatus, setCustomerMlStatus] = useState(null); 
-
+  
+  // Toxicity Monitoring States
+  const [toxicityReport, setToxicityReport] = useState(null);
+  const [showToxicityAlert, setShowToxicityAlert] = useState(false);
+  const [toxicityAlert, setToxicityAlert] = useState(null);
+  const [scoreHistory, setScoreHistory] = useState([]);
+  const [realTimeScore, setRealTimeScore] = useState(100);
+  const [socket, setSocket] = useState(null);
+  const [customerMlStatus, setCustomerMlStatus] = useState(null);
 
   // --- Helper Functions ---
-
   const getEmptyStats = () => ({
     currentScore: 100,
     totalInteractions: 0,
@@ -67,7 +79,6 @@ const EmployeeDashboard = () => {
 
   const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
-  // Enhanced customer name resolution
   const getCustomerName = useCallback((interaction) => {
     if (interaction.customerName && interaction.customerName.trim() !== '') {
       return interaction.customerName;
@@ -78,12 +89,99 @@ const EmployeeDashboard = () => {
     return 'Customer';
   }, []);
 
-  // --- Data Fetching Functions ---
+  // --- Socket.IO Connection for Real-time Updates ---
+  useEffect(() => {
+    const userData = JSON.parse(localStorage.getItem("user"));
+    if (!userData?.id) return;
 
-  // NEW: Function to fetch the company-wide customer ML status
+    // Connect to Socket.IO
+    const newSocket = io("https://cies-5dc4.onrender.com", {
+      transports: ["polling", "websocket"],
+      query: { userId: userData.id }
+    });
+
+    // Listen for score updates from toxicity service
+    newSocket.on('scoreUpdate', (data) => {
+      console.log('📢 Received score update from toxicity service:', data);
+      
+      setToxicityAlert({
+        type: 'warning',
+        title: 'Score Updated',
+        message: `Your score has been updated due to chat analysis.`,
+        oldScore: data.oldScore,
+        newScore: data.newScore,
+        pointsDeducted: data.pointsDeducted,
+        reason: data.reason,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      
+      setShowToxicityAlert(true);
+      setRealTimeScore(data.newScore);
+      
+      // Add to score history
+      setScoreHistory(prev => [{
+        timestamp: new Date(),
+        oldScore: data.oldScore,
+        newScore: data.newScore,
+        change: -data.pointsDeducted,
+        reason: data.reason
+      }, ...prev.slice(0, 9)]); // Keep last 10 entries
+      
+      // Refresh dashboard data after 1 second
+      setTimeout(() => {
+        fetchDashboardData();
+        fetchToxicityReport();
+      }, 1000);
+    });
+
+    // Listen for toxicity analysis results
+    newSocket.on('toxicityAnalysisResult', (data) => {
+      console.log('📊 Toxicity analysis result:', data);
+      
+      setToxicityAlert({
+        type: 'info',
+        title: 'Chat Analysis Complete',
+        message: `Your recent chat was analyzed for toxicity.`,
+        pointsDeducted: data.pointsDeducted,
+        severity: data.severity,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      
+      setShowToxicityAlert(true);
+    });
+
+    // Listen for toxicity warnings
+    newSocket.on('employeeWarning', (data) => {
+      console.log('⚠️ Employee warning received:', data);
+      
+      setToxicityAlert({
+        type: 'alert',
+        title: 'Communication Warning',
+        message: data.message,
+        warning: data.warning,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      
+      setShowToxicityAlert(true);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      if (newSocket) {
+        newSocket.disconnect();
+      }
+    };
+  }, []);
+
+  // Close toxicity alert
+  const closeToxicityAlert = () => {
+    setShowToxicityAlert(false);
+  };
+
+  // --- Data Fetching Functions ---
   const checkCustomerMLStatus = useCallback(async () => {
     try {
-      // Calls the Node.js proxy at localhost:3000
       const response = await fetch(`${PREDICTION_API_BASE_URL}/customer-status`); 
       const data = await response.json();
 
@@ -109,6 +207,34 @@ const EmployeeDashboard = () => {
     }
   }, []);
 
+  const fetchToxicityReport = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const userData = JSON.parse(localStorage.getItem("user"));
+      
+      if (!userData?.id) return;
+
+      const response = await fetch(
+        `${EMPLOYEE_API_BASE_URL}/employee-toxicity/report/${userData.id}?days=30`,
+        {
+          headers: { 
+            'Authorization': `Bearer ${token}`, 
+            'Content-Type': 'application/json' 
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setToxicityReport(data.report);
+          console.log('📊 Toxicity report loaded:', data.report);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching toxicity report:", error);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -127,6 +253,14 @@ const EmployeeDashboard = () => {
 
       console.log("🆔 Fetching dashboard data for employee:", employeeId);
 
+      // Set initial real-time score
+      if (overviewStats.currentScore) {
+        setRealTimeScore(overviewStats.currentScore);
+      }
+
+      // Fetch toxicity report
+      fetchToxicityReport();
+
       // --- Fetch Employee Data (Overview/Interactions) ---
       if (activeTab === 'overview') {
         const [overviewRes, interactionsRes] = await Promise.all([
@@ -140,7 +274,9 @@ const EmployeeDashboard = () => {
 
         if (overviewRes.ok) {
           const overviewData = await overviewRes.json();
-          setOverviewStats(overviewData.success ? overviewData.stats : getEmptyStats());
+          const stats = overviewData.success ? overviewData.stats : getEmptyStats();
+          setOverviewStats(stats);
+          setRealTimeScore(stats.currentScore || 100);
         } else {
           setOverviewStats(getEmptyStats());
         }
@@ -181,26 +317,24 @@ const EmployeeDashboard = () => {
   };
   
   // --- Effects ---
-
   useEffect(() => {
     fetchDashboardData();
   }, [timeRange, activeTab]);
   
-  // New effect to load the ML status once
   useEffect(() => {
     checkCustomerMLStatus();
   }, [checkCustomerMLStatus]);
 
-
   // --- Handlers & Component Structure ---
-
   const handleRefresh = () => {
     setRefreshing(true);
     fetchDashboardData();
-    checkCustomerMLStatus(); // Refresh ML status too
+    checkCustomerMLStatus();
+    fetchToxicityReport();
   };
 
   const handleLogout = () => {
+    if (socket) socket.disconnect();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     window.location.href = "/login";
@@ -214,7 +348,7 @@ const EmployeeDashboard = () => {
     { id: "home", label: "Back to Home", icon: Home, path: "/" },
   ];
 
-  // --- NEW: ML Status Card Component ---
+  // --- ML Status Card Component ---
   const MLStatusCard = ({ status }) => {
     if (!status) return null;
 
@@ -250,8 +384,79 @@ const EmployeeDashboard = () => {
       </div>
     );
   };
-  // --- END ML Status Card Component ---
 
+  // --- Toxicity Alert Component ---
+  const ToxicityAlert = () => {
+    if (!showToxicityAlert || !toxicityAlert) return null;
+
+    const alertConfig = {
+      warning: {
+        bg: 'bg-yellow-900',
+        border: 'border-yellow-700',
+        icon: <AlertTriangle className="w-6 h-6 text-yellow-400 mr-3" />,
+        titleColor: 'text-yellow-300'
+      },
+      info: {
+        bg: 'bg-blue-900',
+        border: 'border-blue-700',
+        icon: <Info className="w-6 h-6 text-blue-400 mr-3" />,
+        titleColor: 'text-blue-300'
+      },
+      alert: {
+        bg: 'bg-red-900',
+        border: 'border-red-700',
+        icon: <ShieldAlert className="w-6 h-6 text-red-400 mr-3" />,
+        titleColor: 'text-red-300'
+      }
+    };
+
+    const config = alertConfig[toxicityAlert.type] || alertConfig.info;
+
+    return (
+      <div className={`fixed top-4 right-4 z-50 max-w-md ${config.bg} ${config.border} border rounded-xl p-4 shadow-2xl animate-slideIn`}>
+        <div className="flex justify-between items-start">
+          <div className="flex items-center">
+            {config.icon}
+            <div>
+              <h4 className={`font-bold ${config.titleColor}`}>{toxicityAlert.title}</h4>
+              <p className="text-sm text-gray-300 mt-1">{toxicityAlert.message}</p>
+              
+              {toxicityAlert.oldScore !== undefined && (
+                <p className="text-sm text-gray-300 mt-1">
+                  Score: <span className="line-through text-gray-400">{toxicityAlert.oldScore}</span> → 
+                  <span className={`ml-1 ${toxicityAlert.newScore < toxicityAlert.oldScore ? 'text-red-400' : 'text-green-400'}`}>
+                    {toxicityAlert.newScore}
+                  </span>
+                </p>
+              )}
+              
+              {toxicityAlert.pointsDeducted > 0 && (
+                <p className="text-sm text-red-300 mt-1">
+                  ⚠️ Points deducted: {toxicityAlert.pointsDeducted}
+                </p>
+              )}
+              
+              {toxicityAlert.reason && (
+                <p className="text-xs text-gray-400 mt-1">Reason: {toxicityAlert.reason}</p>
+              )}
+              
+              {toxicityAlert.warning && (
+                <p className="text-xs text-yellow-400 mt-1">⚠️ {toxicityAlert.warning}</p>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-2">{toxicityAlert.timestamp}</p>
+            </div>
+          </div>
+          <button 
+            onClick={closeToxicityAlert}
+            className="text-gray-400 hover:text-white ml-4"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -263,9 +468,11 @@ const EmployeeDashboard = () => {
 
   return (
     <div className="flex h-screen bg-gray-900">
-      {/* Sidebar (Unchanged) */}
+      {/* Toxicity Alert */}
+      <ToxicityAlert />
+
+      {/* Sidebar */}
       <div className="w-64 bg-gray-800 text-white shadow-lg">
-        {/* ... (Sidebar code here) ... */}
         <div className="p-6">
           <h1 className="text-2xl font-bold text-white">Employee Portal</h1>
           <p className="text-gray-400 text-sm mt-2">Performance Dashboard</p>
@@ -330,11 +537,10 @@ const EmployeeDashboard = () => {
         </div>
       </div>
 
-
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         <div className="p-8">
-          {/* Header (Unchanged) */}
+          {/* Header */}
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <div>
@@ -343,6 +549,29 @@ const EmployeeDashboard = () => {
                 <p className="text-gray-500 text-sm">Employee ID: {employeeData?.id}</p>
               </div>
               <div className="flex items-center space-x-3">
+                {/* Real-time Score Display */}
+                <div className={`text-2xl font-bold px-4 py-2 rounded-lg transition-all duration-500 ${
+                  realTimeScore >= 80 ? 'bg-green-900 text-green-300 border border-green-700' :
+                  realTimeScore >= 50 ? 'bg-yellow-900 text-yellow-300 border border-yellow-700' :
+                  'bg-red-900 text-red-300 border border-red-700'
+                }`}>
+                  <div className="flex items-center">
+                    <span>Score: {realTimeScore}</span>
+                    {scoreHistory.length > 0 && scoreHistory[0].change < 0 && (
+                      <span className="text-sm ml-2 text-red-400 flex items-center">
+                        <TrendingDown className="w-4 h-4 mr-1" />
+                        {scoreHistory[0].change}
+                      </span>
+                    )}
+                    {scoreHistory.length > 0 && scoreHistory[0].change > 0 && (
+                      <span className="text-sm ml-2 text-green-400 flex items-center">
+                        <TrendingUp className="w-4 h-4 mr-1" />
+                        +{scoreHistory[0].change}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
@@ -364,8 +593,11 @@ const EmployeeDashboard = () => {
             </div>
             
             <div className="flex items-center space-x-4 mt-4">
-              <div className="bg-blue-600 px-3 py-1 rounded-full text-sm">
-                Score: {overviewStats.currentScore || 100}
+              <div className={`px-3 py-1 rounded-full text-sm ${
+                realTimeScore >= 80 ? 'bg-green-600' :
+                realTimeScore >= 50 ? 'bg-yellow-600' : 'bg-red-600'
+              }`}>
+                Score: {realTimeScore}
               </div>
               <div className="bg-green-600 px-3 py-1 rounded-full text-sm">
                 {employeeData?.role || 'employee'}
@@ -376,14 +608,20 @@ const EmployeeDashboard = () => {
               <div className="bg-orange-600 px-3 py-1 rounded-full text-sm">
                 {overviewStats.completedInteractions || 0} Completed
               </div>
+              {toxicityReport?.totalPointsDeducted > 0 && (
+                <div className="bg-red-600 px-3 py-1 rounded-full text-sm flex items-center">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  -{toxicityReport.totalPointsDeducted} Points
+                </div>
+              )}
             </div>
           </div>
 
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <>
-              {/* Stats Cards (Including the new ML card) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1  md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 {/* Employee Performance Cards */}
                 <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-blue-500">
                   <div className="flex items-center mb-2">
@@ -399,20 +637,7 @@ const EmployeeDashboard = () => {
                   </p>
                 </div>
                 
-                <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-green-500">
-                  <div className="flex items-center mb-2">
-                    <Activity className="w-5 h-5 text-green-400 mr-2" />
-                    <h3 className="text-gray-400 text-sm">Avg. Sentiment</h3>
-                  </div>
-                  <p className="text-3xl font-bold text-white">
-                    {overviewStats.avgSentiment ? overviewStats.avgSentiment.toFixed(2) : '0.00'}
-                  </p>
-                  <p className={`text-sm mt-2 ${
-                    getSentimentDisplay(overviewStats.avgSentiment || 0).color
-                  }`}>
-                    {getSentimentDisplay(overviewStats.avgSentiment || 0).text} trend
-                  </p>
-                </div>
+             
                 
                 <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-yellow-500">
                   <div className="flex items-center mb-2">
@@ -429,16 +654,21 @@ const EmployeeDashboard = () => {
                     <h3 className="text-gray-400 text-sm">Points Impact</h3>
                   </div>
                   <p className="text-3xl font-bold text-white">{overviewStats.totalPointsDeducted || 0}</p>
-                  <p className="text-green-400 text-sm mt-2">Low impact</p>
+                  <p className={`text-sm mt-2 ${
+                    overviewStats.totalPointsDeducted === 0 ? 'text-green-400' : 
+                    overviewStats.totalPointsDeducted <= 10 ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {overviewStats.totalPointsDeducted === 0 ? 'No impact' : 
+                     overviewStats.totalPointsDeducted <= 10 ? 'Low impact' : 'High impact'}
+                  </p>
                 </div>
                 
-                {/* NEW ML Status Card (occupies the 5th spot) */}
-                <MLStatusCard status={customerMlStatus} />
-
+               
               </div>
 
-              {/* Charts (Unchanged) */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Charts and Additional Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-1 gap-6 mb-8">
+                {/* Performance Trend Chart */}
                 <div className="bg-gray-800 rounded-xl p-6">
                   <h3 className="text-lg font-semibold text-white mb-4">Performance Trend</h3>
                   <ResponsiveContainer width="100%" height={300}>
@@ -454,34 +684,10 @@ const EmployeeDashboard = () => {
                   </ResponsiveContainer>
                 </div>
 
-                <div className="bg-gray-800 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">Satisfaction Distribution</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={Object.entries(overviewStats.satisfactionCounts || {}).map(([key, value]) => ({
-                          name: key.charAt(0).toUpperCase() + key.slice(1),
-                          value
-                        }))}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {Object.entries(overviewStats.satisfactionCounts || {}).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+          
               </div>
 
-              {/* Recent Interactions (Unchanged logic, utilizing useCallback) */}
+              {/* Recent Interactions */}
               <div className="bg-gray-800 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-lg font-semibold text-white">Recent Interactions</h3>
@@ -521,6 +727,7 @@ const EmployeeDashboard = () => {
                           <th className="text-left py-3 px-4 text-gray-400">Duration</th>
                           <th className="text-left py-3 px-4 text-gray-400">Status</th>
                           <th className="text-left py-3 px-4 text-gray-400">Sentiment</th>
+                          <th className="text-left py-3 px-4 text-gray-400">Toxicity</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -539,7 +746,7 @@ const EmployeeDashboard = () => {
                             <td className="py-3 px-4 text-gray-300">
                               {new Date(interaction.createdAt).toLocaleDateString()}
                             </td>
-                            <td className="py-3 px-4 text-gray-300">{interaction.duration}</td>
+                            <td className="py-3 px-4 text-gray-300">{interaction.duration || 'N/A'}</td>
                             <td className="py-3 px-4">
                               <span className={`px-2 py-1 rounded-full text-xs ${
                                 interaction.status === 'completed' ? 'bg-green-500' :
@@ -554,6 +761,21 @@ const EmployeeDashboard = () => {
                                 interaction.sentimentScore < -0.1 ? 'bg-red-500' : 'bg-yellow-500'
                               }`} />
                             </td>
+                            <td className="py-3 px-4">
+                              {interaction.toxicityAnalysis ? (
+                                <div className="flex items-center">
+                                  <div className={`w-3 h-3 rounded-full mr-2 ${
+                                    interaction.toxicityAnalysis.employeeToxicityScore > 0.7 ? 'bg-red-500' :
+                                    interaction.toxicityAnalysis.employeeToxicityScore > 0.4 ? 'bg-yellow-500' : 'bg-green-500'
+                                  }`} />
+                                  <span className="text-xs text-gray-400">
+                                    {interaction.toxicityAnalysis.employeeToxicityScore.toFixed(2)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-500">Not analyzed</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -564,7 +786,7 @@ const EmployeeDashboard = () => {
             </>
           )}
 
-          {/* Analytics Tab (Unchanged) */}
+          {/* Analytics Tab */}
           {activeTab === 'analytics' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Sentiment Analysis */}
@@ -607,28 +829,30 @@ const EmployeeDashboard = () => {
                 </ResponsiveContainer>
               </div>
 
-              {/* Interaction Types */}
+              {/* Toxicity Trend */}
               <div className="bg-gray-800 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Interaction Types</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={analytics.typeDistribution || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {(analytics.typeDistribution || []).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <h3 className="text-lg font-semibold text-white mb-4">Toxicity Trend</h3>
+                {toxicityReport?.interactions && toxicityReport.interactions.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={toxicityReport.interactions.slice(0, 7).map(i => ({
+                      date: new Date(i.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                      toxicityScore: i.toxicityScore,
+                      pointsDeducted: i.pointsDeducted
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="date" stroke="#9CA3AF" />
+                      <YAxis stroke="#9CA3AF" />
+                      <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
+                      <Legend />
+                      <Line type="monotone" dataKey="toxicityScore" stroke="#EF4444" strokeWidth={2} />
+                      <Line type="monotone" dataKey="pointsDeducted" stroke="#F59E0B" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-48 flex items-center justify-center text-gray-500">
+                    No toxicity data available for trend analysis
+                  </div>
+                )}
               </div>
 
               {/* Analytics Summary */}
@@ -651,12 +875,28 @@ const EmployeeDashboard = () => {
                     <span className="text-gray-400">Busiest Day:</span>
                     <span className="font-semibold text-white">{analytics.totalAnalytics?.busiestDay || 'N/A'}</span>
                   </div>
+                  {toxicityReport && (
+                    <>
+                      <div className="border-t border-gray-700 pt-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-400">Toxic Interactions:</span>
+                          <span className="font-semibold text-red-400">{toxicityReport.toxicInteractions || 0}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-400">Avg Toxicity Score:</span>
+                          <span className="font-semibold text-white">
+                            {toxicityReport.averageToxicityScore ? toxicityReport.averageToxicityScore.toFixed(3) : '0.000'}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Profile Tab (Unchanged) */}
+          {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="bg-gray-800 rounded-xl p-6">
               <h3 className="text-lg font-semibold text-white mb-6">Employee Profile</h3>
@@ -678,7 +918,12 @@ const EmployeeDashboard = () => {
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
                       <span className="text-gray-300">Current Score:</span>
-                      <span className="font-semibold text-white">{overviewStats.currentScore || 100}</span>
+                      <span className={`font-semibold ${
+                        realTimeScore >= 80 ? 'text-green-400' :
+                        realTimeScore >= 50 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {realTimeScore}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -698,10 +943,29 @@ const EmployeeDashboard = () => {
                       <span className="font-semibold text-white">{overviewStats.avgResponseTime || 0}s</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Points Impact:</span>
-                      <span className="font-semibold text-white">{overviewStats.totalPointsDeducted || 0}</span>
+                      <span className="text-gray-300">Points Deducted:</span>
+                      <span className="font-semibold text-red-400">-{toxicityReport?.totalPointsDeducted || 0}</span>
                     </div>
                   </div>
+                  
+                  {/* Toxicity Score Card in Profile */}
+                  {toxicityReport && (
+                    <div className="mt-6 bg-gray-900 rounded-lg p-4">
+                      <h5 className="text-gray-400 text-sm mb-2">Toxicity Metrics</h5>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500">Toxic Interactions</p>
+                          <p className="text-lg font-bold text-white">{toxicityReport.toxicInteractions}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Avg Toxicity</p>
+                          <p className="text-lg font-bold text-white">
+                            {toxicityReport.averageToxicityScore?.toFixed(3) || '0.000'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
