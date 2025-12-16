@@ -778,8 +778,8 @@ export default function Home() {
                         <Link to="/chat/customer" onClick={() => setIsMenuOpen(false)} className="py-2 text-cies-300 hover:text-white border-b border-cies-700/50">Customer Care</Link>
                         <Link to="/login" onClick={() => setIsMenuOpen(false)} className="py-2 text-cies-300 hover:text-white border-b border-cies-700/50">Login</Link>
                         <Link to="/signup" onClick={() => setIsMenuOpen(false)} className="py-2 text-cies-300 hover:text-white border-b border-cies-700/50">Sign Up</Link>
-                        <Link to="/manager-dashboard" onClick={() => setIsMenuOpen(false)} className="py-2 text-cies-300 hover:text-white">Manager Dashboard</Link>
-                        {isAuthenticated && (
+                        <Link to="/products">Products</Link>
+                         {isAuthenticated && (
                             <button
                                 onClick={() => {
                                     handleLogout();
