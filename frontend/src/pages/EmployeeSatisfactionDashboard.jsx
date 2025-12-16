@@ -43,24 +43,53 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
   const [unsatisfiedCustomers, setUnsatisfiedCustomers] = useState([]);
   const [unsatisfiedLoading, setUnsatisfiedLoading] = useState(false);
 
-  const API_BASE = "https://cies-5dc4.onrender.com/api";
+  const API_BASE = "http://localhost:5000/api";
+
+  // Function to get employee ID from localStorage if not provided as prop
+  const getEmployeeId = () => {
+    // If employeeId is provided as prop, use it
+    if (employeeId) return employeeId;
+    
+    // Otherwise try to get from localStorage
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        // Check different possible ID fields
+        return user.id || user._id || user.userId || user.userID;
+      }
+    } catch (error) {
+      console.error("Error parsing user from localStorage:", error);
+    }
+    
+    // Also check for token which might contain user info
+    const token = localStorage.getItem('token');
+    if (token) {
+      console.log("Token exists, but no user found in localStorage");
+    }
+    
+    return null;
+  };
+
+  const currentEmployeeId = getEmployeeId();
 
   useEffect(() => {
-    if (employeeId) {
+    if (currentEmployeeId) {
+      console.log("Fetching dashboard for employee:", currentEmployeeId);
       fetchDashboardData();
       checkMLStatus();
     }
-  }, [range, activeTab, employeeId]);
+  }, [range, activeTab, currentEmployeeId]);
 
   useEffect(() => {
-    if (activeTab === 'unsatisfied' && employeeId) {
+    if (activeTab === 'unsatisfied' && currentEmployeeId) {
       fetchUnsatisfiedCustomers();
     }
-  }, [activeTab, employeeId]);
+  }, [activeTab, currentEmployeeId]);
 
   const fetchDashboardData = async () => {
-    if (!employeeId) {
-      console.error("No employee ID provided");
+    if (!currentEmployeeId) {
+      console.error("No employee ID available");
       return;
     }
     
@@ -68,8 +97,11 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
       setLoading(true);
       const token = localStorage.getItem('token');
       
+      console.log(`Making request to: ${API_BASE}/satisfaction/employee/${currentEmployeeId}/dashboard?range=${range}`);
+      console.log("Using token:", token ? "Yes" : "No");
+      
       const response = await fetch(
-        `${API_BASE}/satisfaction/employee/${employeeId}/dashboard?range=${range}`,
+        `${API_BASE}/satisfaction/employee/${currentEmployeeId}/dashboard?range=${range}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -77,6 +109,8 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
           }
         }
       );
+
+      console.log("Response status:", response.status);
 
       if (response.ok) {
         const data = await response.json();
@@ -87,6 +121,13 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
         }
       } else {
         console.error("HTTP error:", response.status);
+        // Try to read error message if any
+        try {
+          const errorData = await response.json();
+          console.error("Error details:", errorData);
+        } catch (e) {
+          // Ignore if no JSON error
+        }
       }
     } catch (error) {
       console.error('Error fetching satisfaction dashboard:', error);
@@ -97,13 +138,13 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
   };
 
   const fetchUnsatisfiedCustomers = async () => {
-    if (!employeeId) return;
+    if (!currentEmployeeId) return;
     
     try {
       setUnsatisfiedLoading(true);
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${API_BASE}/satisfaction/employee/${employeeId}/unsatisfied?limit=20`,
+        `${API_BASE}/satisfaction/employee/${currentEmployeeId}/unsatisfied?limit=20`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -141,14 +182,16 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
 
   const handleRefresh = () => {
     setRefreshing(true);
-    if (employeeId) {
+    if (currentEmployeeId) {
       fetchDashboardData();
       checkMLStatus();
+    } else {
+      setRefreshing(false);
     }
   };
 
   const handleBatchAnalyze = async () => {
-    if (!employeeId) {
+    if (!currentEmployeeId) {
       alert("No employee ID found");
       return;
     }
@@ -156,7 +199,7 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${API_BASE}/satisfaction/employee/${employeeId}/batch-analyze`,
+        `${API_BASE}/satisfaction/employee/${currentEmployeeId}/batch-analyze`,
         {
           method: 'POST',
           headers: {
@@ -304,13 +347,16 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
     );
   };
 
-  if (!employeeId) {
+  if (!currentEmployeeId) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
           <h3 className="text-lg font-semibold text-gray-700 mb-2">Employee ID Required</h3>
           <p className="text-gray-500">Please log in as an employee to view this dashboard</p>
+          <p className="text-sm text-gray-400 mt-2">
+            Check if user data exists in localStorage
+          </p>
         </div>
       </div>
     );
@@ -322,6 +368,7 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-gray-400" />
           <p className="text-gray-500">Loading satisfaction dashboard...</p>
+          <p className="text-sm text-gray-400 mt-2">Employee ID: {currentEmployeeId?.substring(0, 12)}...</p>
         </div>
       </div>
     );
@@ -333,6 +380,7 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
         <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
         <h3 className="text-lg font-semibold text-gray-700 mb-2">No Data Available</h3>
         <p className="text-gray-500 mb-4">Start chatting with customers to see satisfaction data</p>
+        <p className="text-sm text-gray-400 mb-4">Employee ID: {currentEmployeeId?.substring(0, 12)}...</p>
         <Button onClick={handleRefresh}>
           <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
@@ -360,7 +408,7 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
           <p className="text-gray-600">
             Analyzing customer satisfaction from your interactions
           </p>
-          <p className="text-sm text-gray-400 mt-1">Employee ID: {employeeId?.substring(0, 12)}...</p>
+          <p className="text-sm text-gray-400 mt-1">Employee ID: {currentEmployeeId?.substring(0, 12)}...</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <select
