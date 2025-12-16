@@ -40,7 +40,7 @@ import {
   ChevronRight
 } from "lucide-react";
 
-const EMPLOYEE_API_BASE_URL = "http://localhost:5000/api";
+const EMPLOYEE_API_BASE_URL = "https://cies-5dc4.onrender.com/api";
 
 const EmployeeDashboard = () => {
   const [employeeData, setEmployeeData] = useState(null);
@@ -130,7 +130,7 @@ const EmployeeDashboard = () => {
     if (!userData?.id) return;
 
     // Connect to Socket.IO
-    const newSocket = io("http://localhost:5000.com", {
+    const newSocket = io("https://cies-5dc4.onrender.com", {
       transports: ["polling", "websocket"],
       query: { userId: userData.id }
     });
