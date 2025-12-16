@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { CartProvider } from './context/CartContext'; // Import CartProvider
 import Home from "./pages/Home";
 ;
@@ -15,7 +15,27 @@ import ChatEmployee from "./pages/ChatEmployee";
 import EmployeeDashboard from "./pages/EmployeeDashboard ";
 import ProductPageWithNavbar from "./pages/Products";
 import { RecommendationProvider } from './context/RecommendationContext';
+import EmployeeSatisfactionDashboard from './pages/EmployeeSatisfactionDashboard';
+
+// ✅ ADD THIS ProtectedRoute component (add it right here)
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem("token");
+  const user = JSON.parse(localStorage.getItem("user"));
+  
+  if (!token || !user) {
+    // Redirect to login if not authenticated
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
+
 export default function App() {
+  // ✅ ADD THIS function to get user data
+  const getUser = () => {
+    return JSON.parse(localStorage.getItem("user"));
+  };
+
   return (
     <CartProvider> {/* Wrap everything with CartProvider */}
     <RecommendationProvider>
@@ -35,6 +55,12 @@ export default function App() {
           <Route path="/employee-dashboard" element={<EmployeeDashboard />} />
           <Route path="/products" element={<ProductPageWithNavbar />} />
           <Route path="/EmployeeSignup" element={<EmployeeSignup />} />
+<Route path="/employee/satisfaction" element={
+  <ProtectedRoute>
+    <EmployeeSatisfactionDashboard employeeId={getUser()?.id} />
+  </ProtectedRoute>
+
+} />
 
         </Routes>
       </Router>

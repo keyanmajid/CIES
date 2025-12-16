@@ -27,6 +27,7 @@ import {
   Activity,
   RefreshCw,
   LogOut,
+  Smile,
   TrendingUp,
   AlertTriangle,
   Bell,
@@ -346,6 +347,12 @@ const EmployeeDashboard = () => {
     { id: "profile", label: "My Profile", icon: User },
     { id: "chat", label: "Chat System", icon: MessageCircle, path: "/chat/employee" },
     { id: "home", label: "Back to Home", icon: Home, path: "/" },
+      { 
+    id: "satisfaction", 
+    label: "Customer Satisfaction", 
+    icon: Smile, 
+    path: "/employee/satisfaction" 
+  },
   ];
 
   // --- ML Status Card Component ---

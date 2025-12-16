@@ -20,7 +20,7 @@ import predictionRoutes from "./routes/prediction.js";
 import employeeDashboardRoutes from "./routes/employeeDashboardRoutes.js";
 import recommendationRoutes from './routes/recommendations.js';
 import employeeToxicityRoutes from './routes/employeeToxicityRoutes.js';
-
+import satisfactionRoutes from './routes/satisfactionRoutes.js';
 // ✅ Import the INSTANCE (already created)
 import toxicityService from "./service/EmployeeToxicityService.js";
 
@@ -64,6 +64,7 @@ app.use("/api/prediction", predictionRoutes);
 app.use("/api/dashboard", employeeDashboardRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use("/api/employee-toxicity", employeeToxicityRoutes);
+app.use('/api/satisfaction', satisfactionRoutes);
 
 // Test route
 app.get("/api/test", (req, res) => res.json({ 

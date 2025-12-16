@@ -1,6 +1,8 @@
 // models/Interaction.js
 import mongoose from "mongoose";
+// ✅ CUSTOMER SATISFACTION FIELDS (ADD THESE)
 
+  
 const MessageSchema = new mongoose.Schema({
   sender: { type: String, enum: ["customer", "employee"], required: true },
   text: { type: String, required: true },
@@ -35,7 +37,37 @@ const InteractionSchema = new mongoose.Schema({
   completedAt: { type: Date },
   completionReason: { type: String },
   toxicityAnalysis: ToxicityAnalysisSchema,
-  duration: { type: String }
+  duration: { type: String },
+
+   customerSatisfaction: {
+    predictedLabel: { type: String, enum: ["satisfied", "neutral", "dissatisfied"], default: null },
+    confidence: { type: Number, default: null },
+    satisfactionScore: { type: Number, default: null }, // 0-100
+    analyzedAt: { type: Date, default: null },
+    mlModelVersion: { type: String, default: null }
+  },
+  
+  // Customer feedback (optional manual feedback)
+  customerFeedback: {
+    rating: { type: Number, min: 1, max: 5, default: null },
+    comment: { type: String, default: null },
+    submittedAt: { type: Date, default: null }
+  },
+  
+  // For tracking satisfaction analysis history
+  satisfactionAnalysisHistory: [{
+    timestamp: { type: Date, default: Date.now },
+    predictedLabel: String,
+    confidence: Number,
+    satisfactionScore: Number,
+    modelVersion: String,
+    source: { type: String, enum: ["ml", "manual", "auto"], default: "ml" }
+  }],
+  
+  // Flags for quick filtering
+  isCustomerSatisfied: { type: Boolean, default: null },
+  needsFollowup: { type: Boolean, default: false },
+  
 }, { timestamps: true });
 
 // Add indexes for better query performance
