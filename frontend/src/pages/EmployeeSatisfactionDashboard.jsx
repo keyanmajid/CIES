@@ -43,7 +43,7 @@ const EmployeeSatisfactionDashboard = ({ employeeId }) => {
   const [unsatisfiedCustomers, setUnsatisfiedCustomers] = useState([]);
   const [unsatisfiedLoading, setUnsatisfiedLoading] = useState(false);
 
-  const API_BASE = "http://localhost:5000/api";
+  const API_BASE = "https://cies-5dc4.onrender.com/api";
 
   // Function to get employee ID from localStorage if not provided as prop
   const getEmployeeId = () => {
