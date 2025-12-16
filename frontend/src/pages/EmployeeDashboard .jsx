@@ -34,11 +34,13 @@ import {
   TrendingDown,
   ShieldAlert,
   Info,
-  X
+  X,
+  Menu,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
-const EMPLOYEE_API_BASE_URL = "https://cies-5dc4.onrender.com/api";
-
+const EMPLOYEE_API_BASE_URL = "http://localhost:5000/api";
 
 const EmployeeDashboard = () => {
   const [employeeData, setEmployeeData] = useState(null);
@@ -59,6 +61,11 @@ const EmployeeDashboard = () => {
   const [realTimeScore, setRealTimeScore] = useState(100);
   const [socket, setSocket] = useState(null);
   const [customerMlStatus, setCustomerMlStatus] = useState(null);
+  
+  // Responsive sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [collapsed, setCollapsed] = useState(false);
 
   // --- Helper Functions ---
   const getEmptyStats = () => ({
@@ -72,11 +79,7 @@ const EmployeeDashboard = () => {
     satisfactionCounts: {}
   });
 
-  const getSentimentDisplay = (sentimentScore) => {
-    if (sentimentScore > 0.1) return { text: 'Positive', color: 'text-green-400' };
-    if (sentimentScore < -0.1) return { text: 'Negative', color: 'text-red-400' };
-    return { text: 'Neutral', color: 'text-yellow-400' };
-  };
+  
 
   const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
@@ -90,13 +93,44 @@ const EmployeeDashboard = () => {
     return 'Customer';
   }, []);
 
+  // Handle window resize for responsiveness
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Close sidebar when clicking outside on mobile
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isMobile && sidebarOpen) {
+        const sidebar = document.getElementById('sidebar');
+        const hamburger = document.getElementById('hamburger-btn');
+        if (sidebar && !sidebar.contains(event.target) && 
+            hamburger && !hamburger.contains(event.target)) {
+          setSidebarOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMobile, sidebarOpen]);
+
   // --- Socket.IO Connection for Real-time Updates ---
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem("user"));
     if (!userData?.id) return;
 
     // Connect to Socket.IO
-    const newSocket = io("https://cies-5dc4.onrender.com", {
+    const newSocket = io("http://localhost:5000.com", {
       transports: ["polling", "websocket"],
       query: { userId: userData.id }
     });
@@ -341,18 +375,26 @@ const EmployeeDashboard = () => {
     window.location.href = "/login";
   };
 
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setSidebarOpen(!sidebarOpen);
+    } else {
+      setCollapsed(!collapsed);
+    }
+  };
+
   const navigationItems = [
     { id: "overview", label: "Dashboard Overview", icon: Activity },
     { id: "analytics", label: "Performance Analytics", icon: BarChart3 },
     { id: "profile", label: "My Profile", icon: User },
     { id: "chat", label: "Chat System", icon: MessageCircle, path: "/chat/employee" },
     { id: "home", label: "Back to Home", icon: Home, path: "/" },
-      { 
-    id: "satisfaction", 
-    label: "Customer Satisfaction", 
-    icon: Smile, 
-    path: "/employee/satisfaction" 
-  },
+    { 
+      id: "satisfaction", 
+      label: "Customer Satisfaction", 
+      icon: Smile, 
+      path: "/employee/satisfaction" 
+    },
   ];
 
   // --- ML Status Card Component ---
@@ -369,7 +411,7 @@ const EmployeeDashboard = () => {
     const trendColor = countDifference > 0 ? 'text-green-400' : 'text-yellow-400';
 
     return (
-      <div className={`bg-gray-800 rounded-xl p-6 border-l-4 ${isConnected ? 'border-green-500' : 'border-red-500'}`}>
+      <div className={`bg-gray-800 rounded-xl p-4 md:p-6 border-l-4 ${isConnected ? 'border-green-500' : 'border-red-500'}`}>
         <div className="flex items-center mb-2 justify-between">
           <div className="flex items-center">
             <BarChart3 className={`w-5 h-5 mr-2 ${isConnected ? 'text-green-400' : 'text-red-400'}`} />
@@ -379,10 +421,10 @@ const EmployeeDashboard = () => {
               {statusText}
           </span>
         </div>
-        <p className="text-xl font-bold text-white mt-2">
+        <p className="text-lg md:text-xl font-bold text-white mt-2">
             Current Customers: {currentCount.toLocaleString()}
         </p>
-        <p className="text-xl font-bold text-white">
+        <p className="text-lg md:text-xl font-bold text-white">
             Predicted Next Month: {predictedCount.toLocaleString()}
         </p>
         <p className={`text-sm mt-2 flex items-center ${trendColor}`}>
@@ -420,7 +462,7 @@ const EmployeeDashboard = () => {
     const config = alertConfig[toxicityAlert.type] || alertConfig.info;
 
     return (
-      <div className={`fixed top-4 right-4 z-50 max-w-md ${config.bg} ${config.border} border rounded-xl p-4 shadow-2xl animate-slideIn`}>
+      <div className={`fixed top-4 right-4 z-50 max-w-sm md:max-w-md ${config.bg} ${config.border} border rounded-xl p-4 shadow-2xl animate-slideIn`}>
         <div className="flex justify-between items-start">
           <div className="flex items-center">
             {config.icon}
@@ -474,13 +516,45 @@ const EmployeeDashboard = () => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-900">
+    <div className="flex h-screen bg-gray-900 overflow-hidden">
       {/* Toxicity Alert */}
       <ToxicityAlert />
 
+      {/* Mobile Overlay */}
+      {isMobile && sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="w-64 bg-gray-800 text-white shadow-lg">
-        <div className="p-6">
+      <div 
+        id="sidebar"
+        className={`
+          fixed lg:relative z-50 h-full transition-all duration-300 ease-in-out
+          ${isMobile 
+            ? `${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} w-64`
+            : `${collapsed ? 'w-20' : 'w-64'}`
+          }
+          bg-gray-800 text-white shadow-lg
+        `}
+      >
+        {/* Sidebar Toggle Button */}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-6 bg-gray-800 text-white p-1 rounded-full border border-gray-700 z-10"
+        >
+          {isMobile ? (
+            <ChevronLeft className="w-4 h-4" />
+          ) : collapsed ? (
+            <ChevronRight className="w-4 h-4" />
+          ) : (
+            <ChevronLeft className="w-4 h-4" />
+          )}
+        </button>
+
+        <div className={`p-6 ${collapsed && !isMobile ? 'hidden' : 'block'}`}>
           <h1 className="text-2xl font-bold text-white">Employee Portal</h1>
           <p className="text-gray-400 text-sm mt-2">Performance Dashboard</p>
         </div>
@@ -499,23 +573,27 @@ const EmployeeDashboard = () => {
                     isActive 
                       ? "bg-blue-600 text-white" 
                       : "hover:bg-gray-700 hover:text-white"
-                  }`}
+                  } ${collapsed && !isMobile ? 'justify-center' : ''}`}
+                  onClick={() => isMobile && setSidebarOpen(false)}
                 >
-                  <Icon className="w-5 h-5 mr-3" />
-                  {item.label}
+                  <Icon className={`w-5 h-5 ${collapsed && !isMobile ? '' : 'mr-3'}`} />
+                  {(!collapsed || isMobile) && item.label}
                 </Link>
               ) : (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    isMobile && setSidebarOpen(false);
+                  }}
                   className={`flex items-center w-full px-4 py-3 text-gray-300 rounded-lg transition-colors ${
                     isActive 
                       ? "bg-blue-600 text-white" 
                       : "hover:bg-gray-700 hover:text-white"
-                  }`}
+                  } ${collapsed && !isMobile ? 'justify-center' : ''}`}
                 >
-                  <Icon className="w-5 h-5 mr-3" />
-                  {item.label}
+                  <Icon className={`w-5 h-5 ${collapsed && !isMobile ? '' : 'mr-3'}`} />
+                  {(!collapsed || isMobile) && item.label}
                 </button>
               );
             })}
@@ -523,7 +601,7 @@ const EmployeeDashboard = () => {
         </nav>
 
         {/* User Info & Logout */}
-        <div className="absolute bottom-0 w-64 p-4 border-t border-gray-700">
+        <div className={`absolute bottom-0 w-full p-4 border-t border-gray-700 ${collapsed && !isMobile ? 'hidden' : 'block'}`}>
           <div className="flex items-center mb-4">
             <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center mr-3">
               <User className="w-5 h-5 text-white" />
@@ -546,18 +624,33 @@ const EmployeeDashboard = () => {
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        {/* Top Navigation Bar with Hamburger */}
+        <div className="sticky top-0 z-30 bg-gray-800 border-b border-gray-700 lg:hidden">
+          <div className="flex items-center justify-between p-4">
+            <button
+              id="hamburger-btn"
+              onClick={() => setSidebarOpen(true)}
+              className="text-white p-2 rounded-lg hover:bg-gray-700"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <h1 className="text-lg font-bold text-white">Employee Dashboard</h1>
+            <div className="w-10"></div> {/* Spacer for alignment */}
+          </div>
+        </div>
+
+        <div className="p-4 md:p-6 lg:p-8">
           {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
+          <div className="mb-6 md:mb-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white mb-2">Employee Performance Dashboard</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Employee Performance Dashboard</h1>
                 <p className="text-gray-400">Welcome back, {employeeData?.name || 'Employee'}</p>
                 <p className="text-gray-500 text-sm">Employee ID: {employeeData?.id}</p>
               </div>
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                 {/* Real-time Score Display */}
-                <div className={`text-2xl font-bold px-4 py-2 rounded-lg transition-all duration-500 ${
+                <div className={`text-xl md:text-2xl font-bold px-4 py-2 rounded-lg transition-all duration-500 ${
                   realTimeScore >= 80 ? 'bg-green-900 text-green-300 border border-green-700' :
                   realTimeScore >= 50 ? 'bg-yellow-900 text-yellow-300 border border-yellow-700' :
                   'bg-red-900 text-red-300 border border-red-700'
@@ -579,27 +672,29 @@ const EmployeeDashboard = () => {
                   </div>
                 </div>
                 
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="flex items-center bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white hover:bg-gray-700 transition-colors"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                  {refreshing ? 'Refreshing...' : 'Refresh'}
-                </button>
-                <select 
-                  value={timeRange}
-                  onChange={(e) => setTimeRange(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                >
-                  <option value="week">Last Week</option>
-                  <option value="month">Last Month</option>
-                  <option value="year">Last Year</option>
-                </select>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="flex items-center bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white hover:bg-gray-700 transition-colors text-sm md:text-base"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                    {refreshing ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                  <select 
+                    value={timeRange}
+                    onChange={(e) => setTimeRange(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm md:text-base"
+                  >
+                    <option value="week">Last Week</option>
+                    <option value="month">Last Month</option>
+                    <option value="year">Last Year</option>
+                  </select>
+                </div>
               </div>
             </div>
             
-            <div className="flex items-center space-x-4 mt-4">
+            <div className="flex flex-wrap items-center gap-2 mt-4">
               <div className={`px-3 py-1 rounded-full text-sm ${
                 realTimeScore >= 80 ? 'bg-green-600' :
                 realTimeScore >= 50 ? 'bg-yellow-600' : 'bg-red-600'
@@ -628,14 +723,14 @@ const EmployeeDashboard = () => {
           {activeTab === 'overview' && (
             <>
               {/* Stats Cards */}
-              <div className="grid grid-cols-1  md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
                 {/* Employee Performance Cards */}
-                <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-blue-500">
+                <div className="bg-gray-800 rounded-xl p-4 md:p-6 border-l-4 border-blue-500">
                   <div className="flex items-center mb-2">
                     <Users className="w-5 h-5 text-blue-400 mr-2" />
                     <h3 className="text-gray-400 text-sm">Total Interactions</h3>
                   </div>
-                  <p className="text-3xl font-bold text-white">{overviewStats.totalInteractions || 0}</p>
+                  <p className="text-2xl md:text-3xl font-bold text-white">{overviewStats.totalInteractions || 0}</p>
                   <p className={`text-sm mt-2 ${
                     overviewStats.completionRate >= 80 ? 'text-green-400' : 
                     overviewStats.completionRate >= 50 ? 'text-yellow-400' : 'text-red-400'
@@ -644,23 +739,21 @@ const EmployeeDashboard = () => {
                   </p>
                 </div>
                 
-             
-                
-                <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-yellow-500">
+                <div className="bg-gray-800 rounded-xl p-4 md:p-6 border-l-4 border-yellow-500">
                   <div className="flex items-center mb-2">
                     <MessageCircle className="w-5 h-5 text-yellow-400 mr-2" />
                     <h3 className="text-gray-400 text-sm">Avg. Response Time</h3>
                   </div>
-                  <p className="text-3xl font-bold text-white">{overviewStats.avgResponseTime || '0'}s</p>
+                  <p className="text-2xl md:text-3xl font-bold text-white">{overviewStats.avgResponseTime || '0'}s</p>
                   <p className="text-green-400 text-sm mt-2">Within target range</p>
                 </div>
                 
-                <div className="bg-gray-800 rounded-xl p-6 border-l-4 border-purple-500">
+                <div className="bg-gray-800 rounded-xl p-4 md:p-6 border-l-4 border-purple-500">
                   <div className="flex items-center mb-2">
                     <BarChart3 className="w-5 h-5 text-purple-400 mr-2" />
                     <h3 className="text-gray-400 text-sm">Points Impact</h3>
                   </div>
-                  <p className="text-3xl font-bold text-white">{overviewStats.totalPointsDeducted || 0}</p>
+                  <p className="text-2xl md:text-3xl font-bold text-white">{overviewStats.totalPointsDeducted || 0}</p>
                   <p className={`text-sm mt-2 ${
                     overviewStats.totalPointsDeducted === 0 ? 'text-green-400' : 
                     overviewStats.totalPointsDeducted <= 10 ? 'text-yellow-400' : 'text-red-400'
@@ -669,42 +762,39 @@ const EmployeeDashboard = () => {
                      overviewStats.totalPointsDeducted <= 10 ? 'Low impact' : 'High impact'}
                   </p>
                 </div>
-                
-               
               </div>
 
               {/* Charts and Additional Sections */}
-              <div className="grid grid-cols-1 lg:grid-cols-1 gap-6 mb-8">
+              <div className="grid grid-cols-1 gap-6 mb-6 md:mb-8">
                 {/* Performance Trend Chart */}
-                <div className="bg-gray-800 rounded-xl p-6">
+                <div className="bg-gray-800 rounded-xl p-4 md:p-6">
                   <h3 className="text-lg font-semibold text-white mb-4">Performance Trend</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={overviewStats.performanceTrend || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9CA3AF" />
-                      <YAxis stroke="#9CA3AF" />
-                      <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
-                      <Legend />
-                      <Line type="monotone" dataKey="interactions" stroke="#3B82F6" strokeWidth={2} />
-                      <Line type="monotone" dataKey="satisfaction" stroke="#10B981" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <div className="h-64 md:h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={overviewStats.performanceTrend || []}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="date" stroke="#9CA3AF" />
+                        <YAxis stroke="#9CA3AF" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
+                        <Legend />
+                        <Line type="monotone" dataKey="interactions" stroke="#3B82F6" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-
-          
               </div>
 
               {/* Recent Interactions */}
-              <div className="bg-gray-800 rounded-xl p-6">
-                <div className="flex items-center justify-between mb-6">
+              <div className="bg-gray-800 rounded-xl p-4 md:p-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                   <h3 className="text-lg font-semibold text-white">Recent Interactions</h3>
-                  <div className="flex items-center space-x-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                     <span className="text-gray-400 text-sm">
                       Showing {interactions.length} interactions
                     </span>
                     <Link
                       to="/chat/employee"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm md:text-base"
                     >
                       <MessageCircle className="w-4 h-4 mr-2" />
                       Go to Chat
@@ -725,36 +815,34 @@ const EmployeeDashboard = () => {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full min-w-[640px]">
                       <thead>
                         <tr className="border-b border-gray-700">
-                          <th className="text-left py-3 px-4 text-gray-400">Customer</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Type</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Date</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Duration</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Status</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Sentiment</th>
-                          <th className="text-left py-3 px-4 text-gray-400">Toxicity</th>
-                        </tr>
+                          <th className="text-left py-3 px-2 md:px-4 text-gray-400 text-sm">Customer</th>
+                          <th className="text-left py-3 px-2 md:px-4 text-gray-400 text-sm">Type</th>
+                          <th className="text-left py-3 px-2 md:px-4 text-gray-400 text-sm">Date</th>
+                          <th className="text-left py-3 px-2 md:px-4 text-gray-400 text-sm">Duration</th>
+                          <th className="text-left py-3 px-2 md:px-4 text-gray-400 text-sm">Status</th>
+                            </tr>
                       </thead>
                       <tbody>
                         {interactions.map((interaction) => (
                           <tr key={interaction._id} className="border-b border-gray-700 hover:bg-gray-750">
-                            <td className="py-3 px-4 text-white">
+                            <td className="py-3 px-2 md:px-4 text-white text-sm">
                               {getCustomerName(interaction)}
                             </td>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-2 md:px-4">
                               <span className={`px-2 py-1 rounded-full text-xs ${
                                 interaction.type === 'chat' ? 'bg-blue-500' : 'bg-purple-500'
                               }`}>
                                 {interaction.type}
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-gray-300">
+                            <td className="py-3 px-2 md:px-4 text-gray-300 text-sm">
                               {new Date(interaction.createdAt).toLocaleDateString()}
                             </td>
-                            <td className="py-3 px-4 text-gray-300">{interaction.duration || 'N/A'}</td>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-2 md:px-4 text-gray-300 text-sm">{interaction.duration || 'N/A'}</td>
+                            <td className="py-3 px-2 md:px-4">
                               <span className={`px-2 py-1 rounded-full text-xs ${
                                 interaction.status === 'completed' ? 'bg-green-500' :
                                 interaction.status === 'active' ? 'bg-blue-500' : 'bg-yellow-500'
@@ -762,27 +850,8 @@ const EmployeeDashboard = () => {
                                 {interaction.status}
                               </span>
                             </td>
-                            <td className="py-3 px-4">
-                              <div className={`w-16 h-2 rounded-full ${
-                                interaction.sentimentScore > 0.1 ? 'bg-green-500' : 
-                                interaction.sentimentScore < -0.1 ? 'bg-red-500' : 'bg-yellow-500'
-                              }`} />
-                            </td>
-                            <td className="py-3 px-4">
-                              {interaction.toxicityAnalysis ? (
-                                <div className="flex items-center">
-                                  <div className={`w-3 h-3 rounded-full mr-2 ${
-                                    interaction.toxicityAnalysis.employeeToxicityScore > 0.7 ? 'bg-red-500' :
-                                    interaction.toxicityAnalysis.employeeToxicityScore > 0.4 ? 'bg-yellow-500' : 'bg-green-500'
-                                  }`} />
-                                  <span className="text-xs text-gray-400">
-                                    {interaction.toxicityAnalysis.employeeToxicityScore.toFixed(2)}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-500">Not analyzed</span>
-                              )}
-                            </td>
+                            
+                           
                           </tr>
                         ))}
                       </tbody>
@@ -795,102 +864,108 @@ const EmployeeDashboard = () => {
 
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
               {/* Sentiment Analysis */}
-              <div className="bg-gray-800 rounded-xl p-6">
+              <div className="bg-gray-800 rounded-xl p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Sentiment Analysis</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={analytics.sentimentData || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {(analytics.sentimentData || []).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="h-64 md:h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={analytics.sentimentData || []}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {(analytics.sentimentData || []).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
               {/* Weekly Performance */}
-              <div className="bg-gray-800 rounded-xl p-6">
+              <div className="bg-gray-800 rounded-xl p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Weekly Performance</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analytics.weeklyPerformance || []}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="week" stroke="#9CA3AF" />
-                    <YAxis stroke="#9CA3AF" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
-                    <Legend />
-                    <Bar dataKey="interactions" fill="#3B82F6" />
-                    <Bar dataKey="satisfaction" fill="#10B981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Toxicity Trend */}
-              <div className="bg-gray-800 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Toxicity Trend</h3>
-                {toxicityReport?.interactions && toxicityReport.interactions.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={toxicityReport.interactions.slice(0, 7).map(i => ({
-                      date: new Date(i.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                      toxicityScore: i.toxicityScore,
-                      pointsDeducted: i.pointsDeducted
-                    }))}>
+                <div className="h-64 md:h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analytics.weeklyPerformance || []}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9CA3AF" />
+                      <XAxis dataKey="week" stroke="#9CA3AF" />
                       <YAxis stroke="#9CA3AF" />
                       <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
                       <Legend />
-                      <Line type="monotone" dataKey="toxicityScore" stroke="#EF4444" strokeWidth={2} />
-                      <Line type="monotone" dataKey="pointsDeducted" stroke="#F59E0B" strokeWidth={2} />
-                    </LineChart>
+                      <Bar dataKey="interactions" fill="#3B82F6" />
+                      <Bar dataKey="satisfaction" fill="#10B981" />
+                    </BarChart>
                   </ResponsiveContainer>
-                ) : (
-                  <div className="h-48 flex items-center justify-center text-gray-500">
-                    No toxicity data available for trend analysis
-                  </div>
-                )}
+                </div>
+              </div>
+
+              {/* Toxicity Trend */}
+              <div className="bg-gray-800 rounded-xl p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Toxicity Trend</h3>
+                <div className="h-64 md:h-80">
+                  {toxicityReport?.interactions && toxicityReport.interactions.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={toxicityReport.interactions.slice(0, 7).map(i => ({
+                        date: new Date(i.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        toxicityScore: i.toxicityScore,
+                        pointsDeducted: i.pointsDeducted
+                      }))}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="date" stroke="#9CA3AF" />
+                        <YAxis stroke="#9CA3AF" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', color: 'white' }} />
+                        <Legend />
+                        <Line type="monotone" dataKey="toxicityScore" stroke="#EF4444" strokeWidth={2} />
+                        <Line type="monotone" dataKey="pointsDeducted" stroke="#F59E0B" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-gray-500">
+                      No toxicity data available for trend analysis
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Analytics Summary */}
-              <div className="bg-gray-800 rounded-xl p-6">
+              <div className="bg-gray-800 rounded-xl p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Analytics Summary</h3>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Total Hours:</span>
+                    <span className="text-gray-400 text-sm md:text-base">Total Hours:</span>
                     <span className="font-semibold text-white">{analytics.totalAnalytics?.totalHours || 0}h</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Avg Session Length:</span>
+                    <span className="text-gray-400 text-sm md:text-base">Avg Session Length:</span>
                     <span className="font-semibold text-white">{analytics.totalAnalytics?.avgSessionLength || '0m'}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Peak Hours:</span>
+                    <span className="text-gray-400 text-sm md:text-base">Peak Hours:</span>
                     <span className="font-semibold text-white">{analytics.totalAnalytics?.peakHours || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Busiest Day:</span>
+                    <span className="text-gray-400 text-sm md:text-base">Busiest Day:</span>
                     <span className="font-semibold text-white">{analytics.totalAnalytics?.busiestDay || 'N/A'}</span>
                   </div>
                   {toxicityReport && (
                     <>
                       <div className="border-t border-gray-700 pt-4">
                         <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Toxic Interactions:</span>
+                          <span className="text-gray-400 text-sm md:text-base">Toxic Interactions:</span>
                           <span className="font-semibold text-red-400">{toxicityReport.toxicInteractions || 0}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Avg Toxicity Score:</span>
+                          <span className="text-gray-400 text-sm md:text-base">Avg Toxicity Score:</span>
                           <span className="font-semibold text-white">
                             {toxicityReport.averageToxicityScore ? toxicityReport.averageToxicityScore.toFixed(3) : '0.000'}
                           </span>
@@ -905,26 +980,26 @@ const EmployeeDashboard = () => {
 
           {/* Profile Tab */}
           {activeTab === 'profile' && (
-            <div className="bg-gray-800 rounded-xl p-6">
+            <div className="bg-gray-800 rounded-xl p-4 md:p-6">
               <h3 className="text-lg font-semibold text-white mb-6">Employee Profile</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-gray-400 mb-4">Personal Information</h4>
                   <div className="space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Name:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Name:</span>
                       <span className="font-semibold text-white">{employeeData?.name || 'N/A'}</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Employee ID:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Employee ID:</span>
                       <span className="font-semibold text-white">{employeeData?.id || 'N/A'}</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Role:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Role:</span>
                       <span className="font-semibold text-white">{employeeData?.role || 'employee'}</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Current Score:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Current Score:</span>
                       <span className={`font-semibold ${
                         realTimeScore >= 80 ? 'text-green-400' :
                         realTimeScore >= 50 ? 'text-yellow-400' : 'text-red-400'
@@ -938,19 +1013,19 @@ const EmployeeDashboard = () => {
                   <h4 className="text-gray-400 mb-4">Performance Summary</h4>
                   <div className="space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Total Interactions:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Total Interactions:</span>
                       <span className="font-semibold text-white">{overviewStats.totalInteractions || 0}</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Completion Rate:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Completion Rate:</span>
                       <span className="font-semibold text-white">{overviewStats.completionRate || 0}%</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Avg. Response Time:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Avg. Response Time:</span>
                       <span className="font-semibold text-white">{overviewStats.avgResponseTime || 0}s</span>
                     </div>
                     <div className="flex justify-between items-center pb-2 border-b border-gray-700">
-                      <span className="text-gray-300">Points Deducted:</span>
+                      <span className="text-gray-300 text-sm md:text-base">Points Deducted:</span>
                       <span className="font-semibold text-red-400">-{toxicityReport?.totalPointsDeducted || 0}</span>
                     </div>
                   </div>
